@@ -1,4 +1,4 @@
-const STATIC_CACHE = 'cwl-static-v4';
+const STATIC_CACHE = 'cwl-static-v5';
 const API_CACHE = 'cwl-api-v1';
 
 const STATIC_ASSETS = [
@@ -16,6 +16,8 @@ const STATIC_ASSETS = [
   './assets/logo_192.png',
   './assets/logo_512.png',
   './assets/cw_icon.png',
+  './assets/gold_star.png',
+  './assets/red_star.png',
   './assets/star_gold.png',
   './assets/star_red.png',
   './assets/bonus_star.png',
@@ -56,6 +58,28 @@ self.addEventListener('fetch', event => {
           if (response.ok) {
             const clone = response.clone();
             caches.open(API_CACHE).then(cache => cache.put(request, clone));
+          }
+          return response;
+        })
+        .catch(() => caches.match(request))
+    );
+    return;
+  }
+
+  // Network-First para documentos HTML, módulos JS e CSS (evita servir scripts antigos do cache)
+  const isCodeOrDoc =
+    request.mode === 'navigate' ||
+    url.pathname.endsWith('.html') ||
+    url.pathname.endsWith('.js') ||
+    url.pathname.endsWith('.css');
+
+  if (isCodeOrDoc && url.origin === self.location.origin) {
+    event.respondWith(
+      fetch(request)
+        .then(response => {
+          if (response && response.status === 200) {
+            const clone = response.clone();
+            caches.open(STATIC_CACHE).then(cache => cache.put(request, clone));
           }
           return response;
         })

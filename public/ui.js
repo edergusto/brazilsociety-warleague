@@ -249,6 +249,7 @@ export function setMobileMenu(open) {
 export async function clearAppCache() {
   try {
     localStorage.clear();
+    sessionStorage.clear();
   } catch {
     // Ignora bloqueios de storage
   }
@@ -258,6 +259,15 @@ export async function clearAppCache() {
       await caches.keys().then(keys => Promise.all(keys.map(key => caches.delete(key))));
     } catch {
       // Ignora falhas da API de Cache
+    }
+  }
+
+  if ('serviceWorker' in navigator) {
+    try {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(registrations.map(reg => reg.unregister()));
+    } catch {
+      // Ignora falhas de Service Worker
     }
   }
 
