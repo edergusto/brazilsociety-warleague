@@ -265,6 +265,49 @@
         </div>
       </div>
     </section>
+
+    <!-- DEDICATED WAR EVENTS VIEW (SPA NAVIGATION & LAZY LOADING) -->
+    <section id="war-events-view" class="view war-events-view hidden" hidden>
+      <div class="war-events-topbar">
+        <button type="button" id="back-to-rounds" class="back-to-rounds-btn" aria-label="Voltar aos Confrontos">
+          <i class="ph-bold ph-arrow-left"></i>
+        </button>
+
+        <!-- ABAS CONDICIONAIS (Visíveis apenas para o clã #2GYGRQPG2 / %232GYGRQPG2) -->
+        <div id="war-events-mode-tabs" class="war-events-mode-tabs hidden" role="tablist" aria-label="Modo de visualização da guerra" hidden>
+          <button type="button" id="war-tab-events-btn" class="war-filter-btn active" role="tab" aria-selected="true">War Events</button>
+          <button type="button" id="war-tab-report-btn" class="war-filter-btn" role="tab" aria-selected="false">Relatório</button>
+        </div>
+      </div>
+
+      <div id="war-events-header" class="war-events-hero"></div>
+
+      <!-- PAINEL 1: WAR EVENTS (FILTRO + HISTÓRICO DE ATAQUES) -->
+      <div id="war-events-attacks-panel" class="war-events-panel-wrap">
+        <div id="war-events-filter" class="war-events-filter" role="tablist" aria-label="Filtrar ataques"></div>
+
+        <div class="war-events-section">
+          <div class="war-events-section-bar">
+            <h4 class="label">Histórico de ataques</h4>
+          </div>
+          <div id="war-events-list-container" class="war-events-flat-list"></div>
+        </div>
+      </div>
+
+      <!-- PAINEL 2: RELATÓRIO DE DESEMPENHO & SUBSTITUIÇÃO (Exclusivo #2GYGRQPG2) -->
+      <div id="war-events-report-container" class="war-events-panel-wrap hidden" hidden>
+        <div class="war-events-section">
+          <div class="war-events-section-bar report-bar">
+            <h4 class="label">Relatório da escalação (15v15)</h4>
+            <button type="button" id="export-report-btn" class="export-report-btn">
+              <i class="ph-bold ph-download-simple"></i>
+              <span>Exportar</span>
+            </button>
+          </div>
+          <div id="war-report-list" class="war-events-flat-list"></div>
+        </div>
+      </div>
+    </section>
   </main>
 
   <nav class="nav">
@@ -285,6 +328,7 @@
   </div>
 </div>
 <script src="https://unpkg.com/@phosphor-icons/web"></script>
-<script src="app.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script type="module" src="app.js"></script>
 </body>
 </html>

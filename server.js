@@ -49,8 +49,9 @@ function route(buildEndpoint) {
 
 app.get('/api/clan/:tag', route(t => `/clans/%23${t}`));
 app.get('/api/league/:tag', route(t => `/clans/%23${t}/currentwar/leaguegroup`));
-// Necessário para calcular estrelas: leaguegroup só traz as warTags
+// Necessário para calcular estrelas e eventos de guerra: leaguegroup só traz as warTags
 app.get('/api/war/:tag', route(t => `/clanwarleagues/wars/%23${t}`));
+app.get('/api/clanwarleagues/wars/:tag', route(t => `/clanwarleagues/wars/%23${t}`));
 
 app.use(express.static(path.join(__dirname, 'public')));
 if (!process.env.VERCEL) {

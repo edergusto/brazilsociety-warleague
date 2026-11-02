@@ -1,4 +1,4 @@
-const STATIC_CACHE = 'cwl-static-v3';
+const STATIC_CACHE = 'cwl-static-v4';
 const API_CACHE = 'cwl-api-v1';
 
 const STATIC_ASSETS = [
@@ -6,6 +6,10 @@ const STATIC_ASSETS = [
   './index.html',
   './style.css',
   './app.js',
+  './api.js',
+  './projections.js',
+  './ui.js',
+  './storage.js',
   './manifest.json',
   './assets/favicon.png',
   './assets/logo.png',
