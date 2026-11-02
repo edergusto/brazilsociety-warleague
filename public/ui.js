@@ -45,6 +45,7 @@ export const el = {
   recentSection: $('recentSearchesSection'),
   recentList: $('recentSearchesList'),
   menu: $('menu'),
+  clearCacheBtn: $('clearCacheBtn'),
   policy: $('policyText'),
   deskSearchBtn: $('deskSearchBtn'),
   deskPolicyBtn: $('deskPolicyBtn'),
@@ -239,6 +240,29 @@ export function hideWarEventsViewAndReturnToRounds() {
 export function setMobileMenu(open) {
   el.menu.classList.toggle('open', open);
   el.menu.setAttribute('aria-hidden', !open);
+}
+
+/**
+ * Limpa completamente o localStorage e todos os caches do Service Worker (PWA Cache Storage),
+ * exibe alerta de confirmação e recarrega a aplicação do zero.
+ */
+export async function clearAppCache() {
+  try {
+    localStorage.clear();
+  } catch {
+    // Ignora bloqueios de storage
+  }
+
+  if ('caches' in window) {
+    try {
+      await caches.keys().then(keys => Promise.all(keys.map(key => caches.delete(key))));
+    } catch {
+      // Ignora falhas da API de Cache
+    }
+  }
+
+  window.alert('Cache limpo com sucesso!');
+  window.location.reload(true);
 }
 
 export function closeDesktopPopovers() {

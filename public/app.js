@@ -19,6 +19,7 @@ import {
   switchWarEventsMode,
   exportReportToPng,
   setMobileMenu,
+  clearAppCache,
   closeDesktopPopovers,
   renderSearchHistory,
   createFeaturedCard,
@@ -209,6 +210,9 @@ function bindEvents() {
 
   $('navMenuBtn').addEventListener('click', () => setMobileMenu(true));
   $('closeMenuBtn').addEventListener('click', () => setMobileMenu(false));
+  if (el.clearCacheBtn) {
+    el.clearCacheBtn.addEventListener('click', clearAppCache);
+  }
   $('policyBtn').addEventListener('click', () => {
     el.policy.hidden = !el.policy.hidden;
   });

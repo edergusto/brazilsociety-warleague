@@ -354,9 +354,11 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .close{position:absolute;top:calc(env(safe-area-inset-top) + 1.5rem);right:1.5rem;font-size:1.9rem;color:var(--muted)}
 .menu-items{width:100%;padding:0 2rem;display:flex;flex-direction:column;gap:1rem;text-align:center;transform:translateY(12px);transition:transform .3s}
 .menu.open .menu-items{transform:none}
-.menu-items>button{font-family:var(--font-clash-bold);font-size:1.25rem;font-weight:700;letter-spacing:.03em;padding:1rem 0;border-bottom:1px solid #241640;transition:color .2s}
+.menu-items>button{font-family:var(--font-clash-bold);display:inline-flex;align-items:center;justify-content:center;gap:.55rem;font-size:1.25rem;font-weight:700;letter-spacing:.03em;padding:1rem 0;border-bottom:1px solid #241640;transition:color .2s;text-transform:uppercase}
+.menu-items>button i{color:var(--gold);font-size:1.35rem}
 .menu-items>button:hover{color:var(--gold)}
 .policy{line-height:1.5}
+.app-version{position:absolute;bottom:calc(env(safe-area-inset-bottom) + 1.5rem);left:50%;transform:translateX(-50%);font-family:var(--font-sans);font-size:.76rem;font-weight:600;letter-spacing:.06em;color:var(--muted);opacity:.7;pointer-events:none}
 
 /* ==========================================================================
    DESKTOP WEB APP EXPERIENCE (@media min-width: 1024px)
