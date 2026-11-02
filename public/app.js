@@ -1,4 +1,4 @@
-/**
+/*
  * app.js
  * Ponto de entrada principal (Controller) da aplicação CWL Manager.
  * Orquestra os módulos de API, Projeções/Regras de Negócio, Storage e Interface (UI).
