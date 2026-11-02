@@ -3,7 +3,10 @@
   const el = {
     form: $('searchForm'), tag: $('clanTag'), err: $('errorMsg'), btnText: $('btnText'), spin: $('btnSpinner'),
     search: $('searchView'), dash: $('dashboardView'), cwl: $('navCwl'),
+    featured: $('featuredClans'),
     fav: $('favToggle'), menu: $('menu'), saved: $('savedList'), policy: $('policyText'),
+    deskSearchBtn: $('deskSearchBtn'), deskSavedBtn: $('deskSavedBtn'), deskSavedList: $('deskSavedList'),
+    deskPolicyBtn: $('deskPolicyBtn'), deskPolicyPopover: $('deskPolicyPopover'),
     statGained: $('statStarsGained'), statLost: $('statStarsLost'), statBonus: $('statStarsBonus'),
     tabStandingsBtn: $('tabStandingsBtn'), tabRoundsBtn: $('tabRoundsBtn'), tabProjectionsBtn: $('tabProjectionsBtn'),
     tabStandings: $('tabStandings'), tabRounds: $('tabRounds'), tabProjections: $('tabProjections'),
@@ -20,6 +23,7 @@
   const FAV_ON = './assets/icone_fita_64.png', FAV_OFF = './assets/icone_fita_mais_64.png';
   const DEFAULT_BADGE = './assets/cw_icon.webp';
   const LS_KEY = 'cwl_saved_clans';
+  const FEATURED_TAGS = ['#2GYGRQPG2', '#2JRGG8J99'];
   const MONTHS = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
   // Constantes da Regra de Negócio CWL (Formato 15v15)
@@ -59,6 +63,79 @@
     if (text != null) n.textContent = text;
     return n;
   };
+
+  // ---------- Clãs em Destaque na Tela Inicial (Promoted Clan Banners) ----------
+  function createFeaturedCard({ tag, name, league, badgeUrl }) {
+    const cleanTag = clean(tag);
+    const btn = mk('button', 'featured-card');
+    btn.type = 'button';
+    btn.setAttribute('aria-label', `Abrir CWL do clã ${name}`);
+
+    const img = mk('img', 'featured-badge');
+    img.src = badgeUrl || DEFAULT_BADGE;
+    img.alt = `Escudo ${name}`;
+
+    const body = mk('div', 'featured-body');
+    const nameRow = mk('div', 'featured-name-row');
+    nameRow.append(
+      mk('span', 'featured-name', name),
+      mk('span', 'featured-tag', `#${cleanTag}`)
+    );
+
+    const leaguePill = mk('span', 'featured-league');
+    leaguePill.append(mk('i', 'ph-fill ph-trophy'), document.createTextNode(league));
+
+    body.append(nameRow, leaguePill);
+    btn.append(img, body, mk('i', 'ph-bold ph-caret-right featured-arrow'));
+
+    btn.addEventListener('click', () => {
+      el.tag.value = cleanTag;
+      search(cleanTag);
+    });
+
+    return btn;
+  }
+
+  async function loadFeaturedClans() {
+    if (!el.featured) return;
+    el.featured.replaceChildren();
+
+    const placeholders = FEATURED_TAGS.map(rawTag => {
+      const card = createFeaturedCard({
+        tag: rawTag,
+        name: 'Carregando clã…',
+        league: 'Consultando CWL…',
+        badgeUrl: DEFAULT_BADGE,
+      });
+      el.featured.append(card);
+      return { rawTag, card };
+    });
+
+    await Promise.allSettled(
+      placeholders.map(async ({ rawTag, card }) => {
+        const normalizedWithHash = '#' + clean(rawTag);
+        const encodedTag = encodeURIComponent(normalizedWithHash); // %232GYGRQPG2 / %232JRGG8J99
+        try {
+          const clan = await api(`/api/clan/${encodedTag}`);
+          const updatedCard = createFeaturedCard({
+            tag: clan.tag || normalizedWithHash,
+            name: clan.name || normalizedWithHash,
+            league: clan.warLeague?.name || 'Sem Liga',
+            badgeUrl: clan.badgeUrls?.medium || clan.badgeUrls?.large || clan.badgeUrls?.small || DEFAULT_BADGE,
+          });
+          card.replaceWith(updatedCard);
+        } catch {
+          const fallbackCard = createFeaturedCard({
+            tag: normalizedWithHash,
+            name: `Clã ${normalizedWithHash}`,
+            league: 'Toque para buscar CWL',
+            badgeUrl: DEFAULT_BADGE,
+          });
+          card.replaceWith(fallbackCard);
+        }
+      })
+    );
+  }
 
   // ---------- views & tabs ----------
   function switchTab(tabName) {
@@ -102,12 +179,6 @@
     return MONTHS[+m - 1] ? `${MONTHS[+m - 1]} de ${y}` : '—';
   }
 
-  /**
-   * Determina o vencedor do confronto direto segundo a regra oficial da CWL:
-   * - Maior número de estrelas vence (+10 estrelas de bônus)
-   * - Desempate por maior porcentagem de destruição total
-   * - Empate absoluto (mesmas estrelas E mesma destruição) => nenhum clã recebe o bônus (null)
-   */
   function resolveWarWinner(clanA, clanB) {
     const starsA = Number(clanA?.stars || 0);
     const starsB = Number(clanB?.stars || 0);
@@ -119,14 +190,9 @@
     if (destA > destB) return clanA.tag;
     if (destB > destA) return clanB.tag;
 
-    return null; // Empate absoluto: nenhum dos clãs ganha o bônus de +10 estrelas
+    return null;
   }
 
-  /**
-   * Calcula as estrelas perdidas (deixadas de ganhar para fechar 3★) em uma guerra:
-   * - Em formato 15v15, o máximo base por rodada é 45 estrelas (3 por ataque).
-   * - Baseado nos ataques realizados (attacks * 3 - stars), ou nas 45 estrelas possíveis caso a guerra tenha encerrado.
-   */
   function calculateMissedStarsInWar(side, warState) {
     const earned = Number(side?.stars || 0);
     const attacksMade = Number(side?.attacks || 0);
@@ -150,21 +216,20 @@
     group.clans.forEach(c => {
       stats[c.tag] = {
         clan: c,
-        stars: 0,           // Total acumulado na tabela (ataques + bônus de vitória)
-        attackStars: 0,     // Total de estrelas puras obtidas em ataques
-        missedStars: 0,     // Total de estrelas perdidas (não perfeitas / deixadas na mesa)
-        bonusStars: 0,      // Total de estrelas de bônus (+10 por vitória)
-        destruction: 0,     // Destruição total acumulada
-        warsPlayed: 0,      // Guerras iniciadas ou finalizadas (inWar + warEnded)
-        completedWars: 0,   // Guerras encerradas (warEnded)
+        stars: 0,
+        attackStars: 0,
+        missedStars: 0,
+        bonusStars: 0,
+        destruction: 0,
+        warsPlayed: 0,
+        completedWars: 0,
         wins: 0,
-        baseStars: 0,       // Estrelas consolidadas antes da rodada simulada
-        baseDestruction: 0, // Destruição consolidada antes da rodada simulada
-        avgAttackStars: 30, // Média de estrelas de ataque por guerra (0 a 45)
+        baseStars: 0,
+        baseDestruction: 0,
+        avgAttackStars: 30,
       };
     });
 
-    // Busca todas as guerras definidas (#0 = rodada ainda não sorteada)
     const jobs = group.rounds.flatMap((r, i) =>
       (r.warTags || []).filter(t => t && t !== '#0').map(t => ({ roundIdx: i, warTag: t }))
     );
@@ -181,8 +246,6 @@
       warsByRound[rIdx].push(w);
     });
 
-    // Identifica a rodada ativa:
-    // 1º: rodada com guerra 'inWar'; 2º: última rodada 'warEnded'; 3º: 1ª rodada em 'preparation'
     let activeRoundIdx = -1;
     for (let i = 0; i < totalRounds; i++) {
       if (warsByRound[i].some(w => w.state === 'inWar')) { activeRoundIdx = i; break; }
@@ -194,7 +257,6 @@
     }
     if (activeRoundIdx === -1) activeRoundIdx = 0;
 
-    // Histórico de confrontos diretos (Dia 1 a Dia 7) do clã pesquisado
     const myRoundsHistory = [];
 
     for (let i = 0; i < totalRounds; i++) {
@@ -245,14 +307,12 @@
       }
     }
 
-    // Calcula a média de estrelas de ataque (0 a 45) de cada clã
     Object.values(stats).forEach(s => {
       s.avgAttackStars = s.warsPlayed > 0
         ? clamp(Math.round(s.attackStars / s.warsPlayed), 0, MAX_ATTACK_STARS)
         : 30;
     });
 
-    // Descobre o confronto direto do nosso clã na rodada ativa
     const activeMatch = myRoundsHistory[activeRoundIdx] && myRoundsHistory[activeRoundIdx].mySide
       ? myRoundsHistory[activeRoundIdx]
       : null;
@@ -348,14 +408,12 @@
 
       const matchup = mk('div', 'round-matchup');
 
-      // Nosso Clã
       const leftTeam = mk('div', 'round-team');
       const leftImg = mk('img');
       leftImg.src = item.mySide.badgeUrls?.small || DEFAULT_BADGE;
       leftImg.alt = '';
       leftTeam.append(leftImg, mk('span', 'round-team-name', item.mySide.name));
 
-      // Placar Central
       const scoreBox = mk('div', 'round-score-box');
       const scoreStars = mk('div', 'round-stars');
       scoreStars.append(
@@ -366,7 +424,6 @@
       const scoreDest = mk('span', 'round-dest', item.state === 'preparation' ? 'vs' : `${myDest}% × ${oppDest}%`);
       scoreBox.append(scoreStars, scoreDest);
 
-      // Clã Adversário
       const rightTeam = mk('div', 'round-team opp');
       const rightImg = mk('img');
       rightImg.src = item.oppSide.badgeUrls?.small || DEFAULT_BADGE;
@@ -641,7 +698,6 @@
         const n = leagueData.teamSize || group.clans.find(c => c.tag === '#' + tag)?.members?.length;
         $('clanSize').textContent = n ? `${n}v${n}` : '15v15';
 
-        // Atualiza as 3 métricas do Banner do Clã (Estrelas Ganhas, Perdidas em vermelho e Bônus)
         const myStats = leagueData.statsByTag['#' + tag];
         if (myStats) {
           updateBannerStats(myStats.stars, myStats.missedStars, myStats.bonusStars);
@@ -664,8 +720,26 @@
         el.projNotice.textContent = msg;
       }
     } catch (e) {
-      showError(e.status === 404 ? 'Clã não encontrado.' : e.status === 400 ? 'Tag inválida.' : 'Erro ao consultar a API. Tente novamente.');
+      showError(e.status === 404 ? 'Clã não encontrado.' : e.status === 400 ? 'Tag inválida.' : 'Erro ao consultar. Tente novamente.');
     } finally { loading(false); }
+  }
+
+  // ---------- Renderização de Clãs Salvos (Mobile + Desktop) ----------
+  function populateSavedContainer(container, onSelect) {
+    const list = getSaved();
+    container.replaceChildren();
+    if (!list.length) {
+      container.append(mk('p', 'muted', 'Nenhum clã salvo ainda.'));
+      return;
+    }
+    list.forEach(c => {
+      const b = mk('button', '', `${c.name} (#${c.tag})`);
+      b.addEventListener('click', () => {
+        onSelect();
+        search(c.tag);
+      });
+      container.append(b);
+    });
   }
 
   // ---------- events ----------
@@ -696,16 +770,54 @@
 
   $('savedBtn').addEventListener('click', () => {
     el.policy.hidden = true;
-    const list = getSaved(); el.saved.replaceChildren();
-    if (!list.length) el.saved.append(mk('p', 'muted', 'Nenhum clã salvo ainda.'));
-    list.forEach(c => {
-      const b = mk('button', '', `${c.name} (#${c.tag})`);
-      b.addEventListener('click', () => { setMenu(false); search(c.tag); });
-      el.saved.append(b);
-    });
+    populateSavedContainer(el.saved, () => setMenu(false));
     el.saved.hidden = !el.saved.hidden;
   });
   $('policyBtn').addEventListener('click', () => { el.saved.hidden = true; el.policy.hidden = !el.policy.hidden; });
 
+  // Eventos da barra de navegação Desktop
+  function closeDesktopPopovers() {
+    if (el.deskSavedList) el.deskSavedList.hidden = true;
+    if (el.deskPolicyPopover) el.deskPolicyPopover.hidden = true;
+    if (el.deskSavedBtn) el.deskSavedBtn.setAttribute('aria-expanded', 'false');
+    if (el.deskPolicyBtn) el.deskPolicyBtn.setAttribute('aria-expanded', 'false');
+  }
+
+  if (el.deskSearchBtn) {
+    el.deskSearchBtn.addEventListener('click', () => {
+      closeDesktopPopovers();
+      showSearch();
+    });
+  }
+
+  if (el.deskSavedBtn) {
+    el.deskSavedBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      const willOpen = el.deskSavedList.hidden;
+      closeDesktopPopovers();
+      if (willOpen) {
+        populateSavedContainer(el.deskSavedList, closeDesktopPopovers);
+        el.deskSavedList.hidden = false;
+        el.deskSavedBtn.setAttribute('aria-expanded', 'true');
+      }
+    });
+  }
+
+  if (el.deskPolicyBtn) {
+    el.deskPolicyBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      const willOpen = el.deskPolicyPopover.hidden;
+      closeDesktopPopovers();
+      if (willOpen) {
+        el.deskPolicyPopover.hidden = false;
+        el.deskPolicyBtn.setAttribute('aria-expanded', 'true');
+      }
+    });
+  }
+
+  document.addEventListener('click', closeDesktopPopovers);
+
   el.cwl.disabled = true;
+
+  loadFeaturedClans();
 })();

@@ -23,8 +23,40 @@
 <body>
 <div class="app">
   <header class="header">
-    <img src="./assets/logo.png" alt="Logo" class="logo">
-    <h1 class="brand">Brazil Society</h1>
+    <div class="header-brand">
+      <img src="./assets/logo.png" alt="Logo" class="logo">
+      <h1 class="brand">Brazil Society</h1>
+    </div>
+
+    <!-- NAVEGAÇÃO DESKTOP (Visível apenas em >= 1024px) -->
+    <nav class="desktop-nav" aria-label="Navegação Principal Desktop">
+      <button type="button" id="deskSearchBtn" class="desk-nav-link">
+        <i class="ph-bold ph-magnifying-glass"></i>
+        <span>Buscar Clã</span>
+      </button>
+
+      <div class="desk-dropdown-wrap">
+        <button type="button" id="deskSavedBtn" class="desk-nav-link" aria-expanded="false">
+          <i class="ph-fill ph-bookmark-simple"></i>
+          <span>Clãs Salvos</span>
+          <i class="ph-bold ph-caret-down desk-caret"></i>
+        </button>
+        <div id="deskSavedList" class="desk-popover saved" hidden></div>
+      </div>
+
+      <div class="desk-dropdown-wrap">
+        <button type="button" id="deskPolicyBtn" class="desk-nav-link" aria-expanded="false">
+          <i class="ph-bold ph-shield-check"></i>
+          <span>Política de Fãs</span>
+        </button>
+        <div id="deskPolicyPopover" class="desk-popover policy-pop" hidden>
+          <p class="muted policy">
+            Este material não é afiliado à Supercell e a Supercell não o endossa nem se responsabiliza por ele.
+            Para mais informações, consulte a Política de Conteúdo para Fãs da Supercell: www.supercell.com/fan-content-policy
+          </p>
+        </div>
+      </div>
+    </nav>
   </header>
 
   <main class="main" id="main">
@@ -45,6 +77,15 @@
             <span id="btnSpinner" class="spinner" hidden></span>
           </button>
         </form>
+
+        <!-- CLÃS EM DESTAQUE (PROMOTED CLAN BANNERS) -->
+        <div class="featured-section" aria-label="Clãs em Destaque">
+          <div class="featured-header">
+            <span class="label">Clãs em Destaque</span>
+            <span class="featured-hint">Acesso Rápido</span>
+          </div>
+          <div id="featuredClans" class="featured-grid"></div>
+        </div>
       </div>
     </section>
 
@@ -55,160 +96,167 @@
         <p id="roundInfo" class="gold"></p>
       </div>
 
-      <!-- CLAN BANNER COM MÉTRICAS DETALHADAS DE ESTRELAS -->
-      <div class="banner">
-        <div class="banner-top">
-          <img id="favToggle" src="./assets/icone_fita_mais_64.png" alt="Favoritar" class="fav">
-          <img id="clanBadge" src="./assets/cw_icon.webp" alt="Escudo" class="badge">
-          <div class="banner-info">
-            <h3 id="clanName"></h3>
-            <p id="clanSize" class="muted"></p>
-            <span id="clanLeague" class="pill"></span>
+      <!-- COLUNA ESQUERDA NO DESKTOP / FLUXO NORMAL NO MOBILE -->
+      <div class="dashboard-col-left">
+        <!-- CLAN BANNER COM MÉTRICAS DETALHADAS DE ESTRELAS -->
+        <div class="banner">
+          <div class="banner-top">
+            <img id="favToggle" src="./assets/icone_fita_mais_64.png" alt="Favoritar" class="fav">
+            <img id="clanBadge" src="./assets/cw_icon.webp" alt="Escudo" class="badge">
+            <div class="banner-info">
+              <h3 id="clanName"></h3>
+              <p id="clanSize" class="muted"></p>
+              <span id="clanLeague" class="pill"></span>
+            </div>
+          </div>
+
+          <div class="banner-stats" aria-label="Resumo de Estrelas do Clã">
+            <div class="stat-item">
+              <span class="stat-label">Estrelas Ganhas</span>
+              <strong id="statStarsGained" class="stat-value gained">
+                <i class="ph-fill ph-star"></i>
+                <span>0</span>
+              </strong>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Estrelas Perdidas</span>
+              <strong id="statStarsLost" class="stat-value lost">
+                <i class="ph-fill ph-warning-octagon"></i>
+                <span>0</span>
+              </strong>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Bônus Vitória</span>
+              <strong id="statStarsBonus" class="stat-value bonus">
+                <i class="ph-fill ph-trophy"></i>
+                <span>+0</span>
+              </strong>
+            </div>
           </div>
         </div>
 
-        <div class="banner-stats" aria-label="Resumo de Estrelas do Clã">
-          <div class="stat-item">
-            <span class="stat-label">Estrelas Ganhas</span>
-            <strong id="statStarsGained" class="stat-value gained">
-              <i class="ph-fill ph-star"></i>
-              <span>0</span>
-            </strong>
-          </div>
-          <div class="stat-item">
-            <span class="stat-label">Estrelas Perdidas</span>
-            <strong id="statStarsLost" class="stat-value lost">
-              <i class="ph-fill ph-warning-octagon"></i>
-              <span>0</span>
-            </strong>
-          </div>
-          <div class="stat-item">
-            <span class="stat-label">Bônus Vitória</span>
-            <strong id="statStarsBonus" class="stat-value bonus">
-              <i class="ph-fill ph-trophy"></i>
-              <span>+0</span>
-            </strong>
-          </div>
+        <!-- NAVEGAÇÃO DE ABAS DO DASHBOARD (Apenas Mobile) -->
+        <div class="tabs" role="tablist" aria-label="Visões da Liga">
+          <button type="button" id="tabStandingsBtn" class="tab-btn active" role="tab" aria-selected="true" aria-controls="tabStandings">
+            <i class="ph-fill ph-trophy"></i>
+            <span>Classificação</span>
+          </button>
+          <button type="button" id="tabRoundsBtn" class="tab-btn" role="tab" aria-selected="false" aria-controls="tabRounds">
+            <i class="ph-fill ph-sword"></i>
+            <span>Confrontos</span>
+          </button>
+          <button type="button" id="tabProjectionsBtn" class="tab-btn" role="tab" aria-selected="false" aria-controls="tabProjections">
+            <i class="ph-fill ph-chart-line-up"></i>
+            <span>Projeções</span>
+          </button>
+        </div>
+
+        <!-- ABA 1: CLASSIFICAÇÃO -->
+        <div id="tabStandings" class="tab-panel" role="tabpanel">
+          <h4 class="label">Classificação</h4>
+          <div id="leaderboard" class="list"></div>
         </div>
       </div>
 
-      <!-- NAVEGAÇÃO DE ABAS DO DASHBOARD -->
-      <div class="tabs" role="tablist" aria-label="Visões da Liga">
-        <button type="button" id="tabStandingsBtn" class="tab-btn active" role="tab" aria-selected="true" aria-controls="tabStandings">
-          <i class="ph-fill ph-trophy"></i>
-          <span>Classificação</span>
-        </button>
-        <button type="button" id="tabRoundsBtn" class="tab-btn" role="tab" aria-selected="false" aria-controls="tabRounds">
-          <i class="ph-fill ph-sword"></i>
-          <span>Confrontos</span>
-        </button>
-        <button type="button" id="tabProjectionsBtn" class="tab-btn" role="tab" aria-selected="false" aria-controls="tabProjections">
-          <i class="ph-fill ph-chart-line-up"></i>
-          <span>Projeções</span>
-        </button>
-      </div>
+      <!-- COLUNA DIREITA NO DESKTOP / ABAS NO MOBILE -->
+      <div class="dashboard-col-right">
+        <!-- ABA 3: PROJEÇÕES (MONEYBALL) -->
+        <div id="tabProjections" class="tab-panel" role="tabpanel" hidden>
+          <h4 class="label desk-section-title">Projeções Analíticas & Simulador</h4>
+          <div id="projectionsNotice" class="notice" hidden></div>
 
-      <!-- ABA 1: CLASSIFICAÇÃO -->
-      <div id="tabStandings" class="tab-panel" role="tabpanel">
-        <h4 class="label">Classificação</h4>
-        <div id="leaderboard" class="list"></div>
-      </div>
-
-      <!-- ABA 2: CONFRONTOS (ROUNDS / HEAD-TO-HEAD HISTORY) -->
-      <div id="tabRounds" class="tab-panel" role="tabpanel" hidden>
-        <h4 class="label">Histórico de Confrontos (7 Dias)</h4>
-        <div id="roundsList" class="rounds-list"></div>
-      </div>
-
-      <!-- ABA 3: PROJEÇÕES (MONEYBALL) -->
-      <div id="tabProjections" class="tab-panel" role="tabpanel" hidden>
-        <div id="projectionsNotice" class="notice" hidden></div>
-
-        <div id="projectionsContent" class="proj-container">
-          <!-- 1. Meta de Promoção (Número Mágico) -->
-          <article class="proj-card promo">
-            <div class="proj-card-header">
-              <div class="proj-icon up"><i class="ph-fill ph-trend-up"></i></div>
-              <div class="proj-meta">
-                <h4 class="proj-title">Meta de Promoção</h4>
-                <span class="proj-subtitle">Número Mágico • Top 2 (15v15)</span>
-              </div>
-              <span id="promoBadge" class="proj-badge">Top 2</span>
-            </div>
-            <p id="promoText" class="proj-body"></p>
-          </article>
-
-          <!-- 2. Média de Sobrevivência (Risco de Rebaixamento) -->
-          <article class="proj-card survival">
-            <div class="proj-card-header">
-              <div class="proj-icon shield"><i class="ph-fill ph-shield-check"></i></div>
-              <div class="proj-meta">
-                <h4 class="proj-title">Média de Sobrevivência</h4>
-                <span class="proj-subtitle">Corte de Permanência • 6º Lugar+</span>
-              </div>
-              <span id="survivalBadge" class="proj-badge">Zona Segura</span>
-            </div>
-            <p id="survivalText" class="proj-body"></p>
-          </article>
-
-          <!-- 3. Cenário de Confronto Direto -->
-          <article class="proj-card h2h">
-            <div class="proj-card-header">
-              <div class="proj-icon sword"><i class="ph-fill ph-sword"></i></div>
-              <div class="proj-meta">
-                <h4 class="proj-title">Cenário de Confronto Direto</h4>
-                <span id="h2hSubtitle" class="proj-subtitle">Disputa Direta • Bônus +10★</span>
-              </div>
-              <span id="h2hBadge" class="proj-badge">Alvo</span>
-            </div>
-            <p id="h2hText" class="proj-body"></p>
-          </article>
-
-          <!-- 4. Simulador de Desempenho (Interativo) -->
-          <article class="proj-card simulator">
-            <div class="proj-card-header">
-              <div class="proj-icon sim"><i class="ph-fill ph-sliders-horizontal"></i></div>
-              <div class="proj-meta">
-                <h4 class="proj-title">Simulador de Desempenho</h4>
-                <span id="simSubtitle" class="proj-subtitle">Rodada Atual • Formato 15v15</span>
-              </div>
-              <span id="simResultBadge" class="proj-badge">Simulação</span>
-            </div>
-
-            <div class="sim-box">
-              <div class="sim-header-row">
-                <span class="sim-label">Estrelas estimadas no ataque:</span>
-                <div class="sim-value-wrap">
-                  <i class="ph-fill ph-star"></i>
-                  <span id="simSliderValue">30</span>
-                  <small>/ 45</small>
+          <div id="projectionsContent" class="proj-container">
+            <!-- 1. Meta de Promoção (Número Mágico) -->
+            <article class="proj-card promo">
+              <div class="proj-card-header">
+                <div class="proj-icon up"><i class="ph-fill ph-trend-up"></i></div>
+                <div class="proj-meta">
+                  <h4 class="proj-title">Meta de Promoção</h4>
+                  <span class="proj-subtitle">Número Mágico • Top 2 (15v15)</span>
                 </div>
+                <span id="promoBadge" class="proj-badge">Top 2</span>
+              </div>
+              <p id="promoText" class="proj-body"></p>
+            </article>
+
+            <!-- 2. Média de Sobrevivência (Risco de Rebaixamento) -->
+            <article class="proj-card survival">
+              <div class="proj-card-header">
+                <div class="proj-icon shield"><i class="ph-fill ph-shield-check"></i></div>
+                <div class="proj-meta">
+                  <h4 class="proj-title">Média de Sobrevivência</h4>
+                  <span class="proj-subtitle">Corte de Permanência • 6º Lugar+</span>
+                </div>
+                <span id="survivalBadge" class="proj-badge">Zona Segura</span>
+              </div>
+              <p id="survivalText" class="proj-body"></p>
+            </article>
+
+            <!-- 3. Cenário de Confronto Direto -->
+            <article class="proj-card h2h">
+              <div class="proj-card-header">
+                <div class="proj-icon sword"><i class="ph-fill ph-sword"></i></div>
+                <div class="proj-meta">
+                  <h4 class="proj-title">Cenário de Confronto Direto</h4>
+                  <span id="h2hSubtitle" class="proj-subtitle">Disputa Direta • Bônus +10★</span>
+                </div>
+                <span id="h2hBadge" class="proj-badge">Alvo</span>
+              </div>
+              <p id="h2hText" class="proj-body"></p>
+            </article>
+
+            <!-- 4. Simulador de Desempenho (Interativo) -->
+            <article class="proj-card simulator">
+              <div class="proj-card-header">
+                <div class="proj-icon sim"><i class="ph-fill ph-sliders-horizontal"></i></div>
+                <div class="proj-meta">
+                  <h4 class="proj-title">Simulador de Desempenho</h4>
+                  <span id="simSubtitle" class="proj-subtitle">Rodada Atual • Formato 15v15</span>
+                </div>
+                <span id="simResultBadge" class="proj-badge">Simulação</span>
               </div>
 
-              <input
-                id="simSlider"
-                type="range"
-                min="0"
-                max="45"
-                step="1"
-                value="30"
-                class="sim-range"
-                aria-label="Estrelas estimadas na rodada atual"
-              >
+              <div class="sim-box">
+                <div class="sim-header-row">
+                  <span class="sim-label">Estrelas estimadas no ataque:</span>
+                  <div class="sim-value-wrap">
+                    <i class="ph-fill ph-star"></i>
+                    <span id="simSliderValue">30</span>
+                    <small>/ 45</small>
+                  </div>
+                </div>
 
-              <div class="sim-ticks">
-                <span>0★</span>
-                <span>15★</span>
-                <span>30★</span>
-                <span>45★</span>
+                <input
+                  id="simSlider"
+                  type="range"
+                  min="0"
+                  max="45"
+                  step="1"
+                  value="30"
+                  class="sim-range"
+                  aria-label="Estrelas estimadas na rodada atual"
+                >
+
+                <div class="sim-ticks">
+                  <span>0★</span>
+                  <span>15★</span>
+                  <span>30★</span>
+                  <span>45★</span>
+                </div>
+
+                <div id="simBonusInfo" class="sim-bonus-info"></div>
               </div>
 
-              <div id="simBonusInfo" class="sim-bonus-info"></div>
-            </div>
+              <h5 class="label sim-table-title">Classificação Simulada do Grupo</h5>
+              <div id="simLeaderboard" class="list"></div>
+            </article>
+          </div>
+        </div>
 
-            <h5 class="label sim-table-title">Classificação Simulada do Grupo</h5>
-            <div id="simLeaderboard" class="list"></div>
-          </article>
+        <!-- ABA 2: CONFRONTOS (ROUNDS / HEAD-TO-HEAD HISTORY) -->
+        <div id="tabRounds" class="tab-panel" role="tabpanel" hidden>
+          <h4 class="label">Histórico de Confrontos (7 Dias)</h4>
+          <div id="roundsList" class="rounds-list"></div>
         </div>
       </div>
     </section>
