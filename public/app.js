@@ -1,9 +1,3 @@
-/*
- * app.js
- * Ponto de entrada principal (Controller) da aplicação CWL Manager.
- * Orquestra os módulos de API, Projeções/Regras de Negócio, Storage e Interface (UI).
- */
-
 import { cleanTag, fetchClanData, fetchLeagueGroup } from './api.js';
 import { seasonLabel, loadStandings } from './projections.js';
 import { saveToSearchHistory } from './storage.js';
