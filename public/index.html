@@ -13,8 +13,8 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="CWL Manager">
   <link rel="manifest" href="./manifest.json">
-  <link rel="icon" type="image/png" sizes="64x64" href="./assets/icone_fita_64.png">
-  <link rel="apple-touch-icon" href="./assets/logo.png">
+  <link rel="icon" type="image/png" href="./assets/favicon.png">
+  <link rel="apple-touch-icon" href="./assets/logo_192.png">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
@@ -34,15 +34,6 @@
         <i class="ph-bold ph-magnifying-glass"></i>
         <span>Buscar Clã</span>
       </button>
-
-      <div class="desk-dropdown-wrap">
-        <button type="button" id="deskSavedBtn" class="desk-nav-link" aria-expanded="false">
-          <i class="ph-fill ph-bookmark-simple"></i>
-          <span>Clãs Salvos</span>
-          <i class="ph-bold ph-caret-down desk-caret"></i>
-        </button>
-        <div id="deskSavedList" class="desk-popover saved" hidden></div>
-      </div>
 
       <div class="desk-dropdown-wrap">
         <button type="button" id="deskPolicyBtn" class="desk-nav-link" aria-expanded="false">
@@ -86,6 +77,15 @@
           </div>
           <div id="featuredClans" class="featured-grid"></div>
         </div>
+
+        <!-- BUSCAS RECENTES (SEARCH HISTORY - Oculto quando vazio) -->
+        <div id="recentSearchesSection" class="recent-section" aria-label="Buscas Recentes" hidden>
+          <div class="recent-header">
+            <span class="label"><i class="ph-bold ph-clock-counter-clockwise"></i> Buscas Recentes</span>
+            <span class="recent-hint">Últimos 5</span>
+          </div>
+          <div id="recentSearchesList" class="recent-list"></div>
+        </div>
       </div>
     </section>
 
@@ -98,37 +98,42 @@
 
       <!-- COLUNA ESQUERDA NO DESKTOP / FLUXO NORMAL NO MOBILE -->
       <div class="dashboard-col-left">
-        <!-- CLAN BANNER COM MÉTRICAS DETALHADAS DE ESTRELAS -->
+        <!-- CLAN BANNER COM LOCALIZAÇÃO, ÍCONE DA LIGA E MÉTRICAS DE ESTRELAS -->
         <div class="banner">
           <div class="banner-top">
-            <img id="favToggle" src="./assets/icone_fita_mais_64.png" alt="Favoritar" class="fav">
-            <img id="clanBadge" src="./assets/cw_icon.webp" alt="Escudo" class="badge">
+            <img id="clanBadge" src="./assets/cw_icon.png" alt="Escudo" class="badge">
             <div class="banner-info">
               <h3 id="clanName"></h3>
-              <p id="clanSize" class="muted"></p>
-              <span id="clanLeague" class="pill"></span>
+              <div class="banner-meta-row">
+                <div id="clanLocation" class="clan-location" hidden></div>
+                <p id="clanSize" class="muted"></p>
+              </div>
+              <div class="league-wrap">
+                <img id="clanLeagueIcon" src="" alt="League Icon" class="league-icon" hidden>
+                <span id="clanLeague" class="pill"></span>
+              </div>
             </div>
           </div>
 
           <div class="banner-stats" aria-label="Resumo de Estrelas do Clã">
             <div class="stat-item">
-              <span class="stat-label">Estrelas Ganhas</span>
+              <span class="stat-label">GANHAS</span>
               <strong id="statStarsGained" class="stat-value gained">
-                <i class="ph-fill ph-star"></i>
+                <img src="assets/gold_star.png" alt="Ganhas" class="stat-icon">
                 <span>0</span>
               </strong>
             </div>
             <div class="stat-item">
-              <span class="stat-label">Estrelas Perdidas</span>
+              <span class="stat-label">PERDIDAS</span>
               <strong id="statStarsLost" class="stat-value lost">
-                <i class="ph-fill ph-warning-octagon"></i>
+                <img src="assets/red_star.png" alt="Perdidas" class="stat-icon">
                 <span>0</span>
               </strong>
             </div>
             <div class="stat-item">
-              <span class="stat-label">Bônus Vitória</span>
+              <span class="stat-label">BÔNUS</span>
               <strong id="statStarsBonus" class="stat-value bonus">
-                <i class="ph-fill ph-trophy"></i>
+                <img src="assets/bonus_star.png" alt="Bonus" class="stat-icon">
                 <span>+0</span>
               </strong>
             </div>
@@ -264,15 +269,13 @@
 
   <nav class="nav">
     <button id="navSearch" aria-label="Buscar"><i class="ph ph-magnifying-glass"></i></button>
-    <button id="navCwl" class="cwl" aria-label="CWL" disabled><img src="./assets/cw_icon.webp" alt="CWL"></button>
+    <button id="navCwl" class="cwl" aria-label="CWL" disabled><img src="./assets/cw_icon.png" alt="CWL"></button>
     <button id="navMenuBtn" aria-label="Menu"><i class="ph ph-list"></i></button>
   </nav>
 
   <div id="menu" class="menu" aria-hidden="true">
     <button id="closeMenuBtn" class="close" aria-label="Fechar"><i class="ph ph-x"></i></button>
     <div class="menu-items">
-      <button id="savedBtn">CLÃS SALVOS</button>
-      <div id="savedList" class="saved" hidden></div>
       <button id="policyBtn">POLÍTICA DE CONTEÚDO PARA FÃS</button>
       <p id="policyText" class="muted policy" hidden>
         Este material não é afiliado à Supercell e a Supercell não o endossa nem se responsabiliza por ele.

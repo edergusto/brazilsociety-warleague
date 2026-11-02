@@ -4,9 +4,11 @@
     form: $('searchForm'), tag: $('clanTag'), err: $('errorMsg'), btnText: $('btnText'), spin: $('btnSpinner'),
     search: $('searchView'), dash: $('dashboardView'), cwl: $('navCwl'),
     featured: $('featuredClans'),
-    fav: $('favToggle'), menu: $('menu'), saved: $('savedList'), policy: $('policyText'),
-    deskSearchBtn: $('deskSearchBtn'), deskSavedBtn: $('deskSavedBtn'), deskSavedList: $('deskSavedList'),
+    recentSection: $('recentSearchesSection'), recentList: $('recentSearchesList'),
+    menu: $('menu'), policy: $('policyText'),
+    deskSearchBtn: $('deskSearchBtn'),
     deskPolicyBtn: $('deskPolicyBtn'), deskPolicyPopover: $('deskPolicyPopover'),
+    clanLoc: $('clanLocation'), clanLeagueIcon: $('clanLeagueIcon'),
     statGained: $('statStarsGained'), statLost: $('statStarsLost'), statBonus: $('statStarsBonus'),
     tabStandingsBtn: $('tabStandingsBtn'), tabRoundsBtn: $('tabRoundsBtn'), tabProjectionsBtn: $('tabProjectionsBtn'),
     tabStandings: $('tabStandings'), tabRounds: $('tabRounds'), tabProjections: $('tabProjections'),
@@ -20,9 +22,10 @@
     simBonusInfo: $('simBonusInfo'), simLeaderboard: $('simLeaderboard'),
   };
 
-  const FAV_ON = './assets/icone_fita_64.png', FAV_OFF = './assets/icone_fita_mais_64.png';
-  const DEFAULT_BADGE = './assets/cw_icon.webp';
-  const LS_KEY = 'cwl_saved_clans';
+  const DEFAULT_BADGE = './assets/cw_icon.png';
+  const WORLD_ICON_PATH = './assets/world_icon.png';
+  const HISTORY_KEY = 'clanSearchHistory';
+  const MAX_HISTORY_ITEMS = 5;
   const FEATURED_TAGS = ['#2GYGRQPG2', '#2JRGG8J99'];
   const MONTHS = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
@@ -44,9 +47,140 @@
 
   // ---------- helpers ----------
   const clean = v => String(v).replace(/[\s#]/g, '').toUpperCase().replace(/O/g, '0');
-  const getSaved = () => { try { return JSON.parse(localStorage.getItem(LS_KEY)) || []; } catch { return []; } };
-  const setSaved = arr => localStorage.setItem(LS_KEY, JSON.stringify(arr));
   const clamp = (n, min, max) => Math.min(max, Math.max(min, n));
+
+  /**
+   * Extrai os 2 últimos dígitos do warLeague.id (ex: 48000018 -> "18")
+   * e retorna o caminho local ./assets/{digits}.png
+   */
+  function getLeagueIconPath(warLeague) {
+    const id = warLeague?.id;
+    if (!id) return null;
+    const extractedDigits = String(id).slice(-2);
+    return `./assets/${extractedDigits}.png`;
+  }
+
+  /**
+   * Cria o elemento visual de bandeira (Flag CDN) quando isCountry === true,
+   * ou ícone de globo/mundo para clãs Internacionais (isCountry === false ou ausente).
+   */
+  function createLocationFlagNode(location, forLeaderboard = false) {
+    if (location?.isCountry && location?.countryCode) {
+      const code = String(location.countryCode).toLowerCase();
+      const flagImg = mk('img', forLeaderboard ? 'row-flag' : 'loc-flag');
+      flagImg.src = `https://flagcdn.com/w20/${code}.png`;
+      flagImg.alt = location.name || code.toUpperCase();
+      flagImg.title = location.name || code.toUpperCase();
+      return flagImg;
+    }
+
+    // Internacional (isCountry: false ou sem localização): tenta usar ./assets/world_icon.png com fallback para ícone de globo CSS
+    const worldImg = mk('img', forLeaderboard ? 'row-world-img' : 'loc-world');
+    worldImg.src = WORLD_ICON_PATH;
+    worldImg.alt = location?.name || 'International';
+    worldImg.title = location?.name || 'International';
+    worldImg.addEventListener('error', () => {
+      const globeIcon = mk('i', (forLeaderboard ? 'row-world-icon' : 'loc-world') + ' ph-bold ph-globe');
+      globeIcon.title = location?.name || 'International';
+      globeIcon.setAttribute('aria-label', location?.name || 'International');
+      worldImg.replaceWith(globeIcon);
+    }, { once: true });
+    return worldImg;
+  }
+
+  /**
+   * Atualiza o elemento #clanLocation e o ícone #clanLeagueIcon no Banner Principal do Clã
+   */
+  function updateBannerLocationAndLeague(clan) {
+    // 1. Localização (Bandeira + Nome do País/Internacional)
+    if (el.clanLoc) {
+      el.clanLoc.replaceChildren();
+      if (clan?.location) {
+        const flagNode = createLocationFlagNode(clan.location, false);
+        const locName = mk('span', '', clan.location.name || 'International');
+        el.clanLoc.append(flagNode, locName);
+        el.clanLoc.hidden = false;
+      } else {
+        el.clanLoc.hidden = true;
+      }
+    }
+
+    // 2. Ícone da Liga (últimos 2 dígitos de warLeague.id -> ./assets/{digits}.png)
+    if (el.clanLeagueIcon) {
+      const iconPath = getLeagueIconPath(clan?.warLeague);
+      if (iconPath) {
+        el.clanLeagueIcon.src = iconPath;
+        el.clanLeagueIcon.alt = clan.warLeague?.name || 'League Icon';
+        el.clanLeagueIcon.hidden = false;
+        el.clanLeagueIcon.onerror = () => { el.clanLeagueIcon.hidden = true; };
+      } else {
+        el.clanLeagueIcon.hidden = true;
+      }
+    }
+  }
+
+  // ---------- Gerenciamento do Histórico de Buscas (localStorage: clanSearchHistory) ----------
+  const getSearchHistory = () => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(HISTORY_KEY));
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+
+  function saveToSearchHistory({ tag, name, badgeUrl }) {
+    const normalizedTag = clean(tag);
+    if (!normalizedTag) return;
+
+    const history = getSearchHistory().filter(item => clean(item.tag) !== normalizedTag);
+    history.unshift({
+      tag: normalizedTag,
+      name: name || `#${normalizedTag}`,
+      badgeUrl: badgeUrl || DEFAULT_BADGE,
+    });
+
+    const trimmed = history.slice(0, MAX_HISTORY_ITEMS);
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(trimmed));
+    renderSearchHistory();
+  }
+
+  function renderSearchHistory() {
+    if (!el.recentSection || !el.recentList) return;
+    const history = getSearchHistory();
+    el.recentList.replaceChildren();
+
+    if (!history.length) {
+      el.recentSection.hidden = true;
+      return;
+    }
+
+    el.recentSection.hidden = false;
+    history.slice(0, MAX_HISTORY_ITEMS).forEach(item => {
+      const itemTag = clean(item.tag);
+      const btn = mk('button', 'recent-item');
+      btn.type = 'button';
+      btn.setAttribute('aria-label', `Buscar novamente o clã ${item.name}`);
+
+      const img = mk('img', 'recent-badge');
+      img.src = item.badgeUrl || DEFAULT_BADGE;
+      img.alt = '';
+
+      const info = mk('div', 'recent-info');
+      info.append(
+        mk('span', 'recent-name', item.name),
+        mk('span', 'recent-tag', `#${itemTag}`)
+      );
+
+      btn.append(img, info, mk('i', 'ph-bold ph-arrow-right recent-go'));
+      btn.addEventListener('click', () => {
+        el.tag.value = itemTag;
+        search(itemTag);
+      });
+
+      el.recentList.append(btn);
+    });
+  }
 
   async function api(path) {
     const r = await fetch(path);
@@ -65,7 +199,7 @@
   };
 
   // ---------- Clãs em Destaque na Tela Inicial (Promoted Clan Banners) ----------
-  function createFeaturedCard({ tag, name, league, badgeUrl }) {
+  function createFeaturedCard({ tag, name, league, warLeague, badgeUrl }) {
     const cleanTag = clean(tag);
     const btn = mk('button', 'featured-card');
     btn.type = 'button';
@@ -83,7 +217,17 @@
     );
 
     const leaguePill = mk('span', 'featured-league');
-    leaguePill.append(mk('i', 'ph-fill ph-trophy'), document.createTextNode(league));
+    const leagueIconPath = getLeagueIconPath(warLeague);
+    if (leagueIconPath) {
+      const lImg = mk('img');
+      lImg.src = leagueIconPath;
+      lImg.alt = '';
+      lImg.onerror = () => lImg.replaceWith(mk('i', 'ph-fill ph-trophy'));
+      leaguePill.append(lImg);
+    } else {
+      leaguePill.append(mk('i', 'ph-fill ph-trophy'));
+    }
+    leaguePill.append(document.createTextNode(league));
 
     body.append(nameRow, leaguePill);
     btn.append(img, body, mk('i', 'ph-bold ph-caret-right featured-arrow'));
@@ -121,6 +265,7 @@
             tag: clan.tag || normalizedWithHash,
             name: clan.name || normalizedWithHash,
             league: clan.warLeague?.name || 'Sem Liga',
+            warLeague: clan.warLeague,
             badgeUrl: clan.badgeUrls?.medium || clan.badgeUrls?.large || clan.badgeUrls?.small || DEFAULT_BADGE,
           });
           card.replaceWith(updatedCard);
@@ -162,16 +307,17 @@
     el.dash.hidden = true; el.search.hidden = false;
     el.cwl.classList.remove('active'); el.cwl.disabled = true;
     el.tag.value = ''; clearError(); currentTag = null; currentLeagueData = null;
+    renderSearchHistory();
   }
 
   function showDashboard() {
     el.search.hidden = true; el.dash.hidden = false;
+    const cwlImg = el.cwl.querySelector('img');
+    if (cwlImg) cwlImg.src = DEFAULT_BADGE;
     el.cwl.classList.add('active'); el.cwl.disabled = false;
     switchTab('standings');
     $('main').scrollTop = 0;
   }
-
-  function updateFav() { el.fav.src = getSaved().some(c => c.tag === currentTag) ? FAV_ON : FAV_OFF; }
 
   // ---------- CWL math & business rules ----------
   function seasonLabel(s) {
@@ -216,6 +362,7 @@
     group.clans.forEach(c => {
       stats[c.tag] = {
         clan: c,
+        location: null,
         stars: 0,
         attackStars: 0,
         missedStars: 0,
@@ -230,10 +377,29 @@
       };
     });
 
+    // Busca em paralelo:
+    // 1) Detalhes individuais dos 8 clãs do grupo (/api/clan/:tag) para obter `location` (isCountry, countryCode, name)
+    // 2) Dados de todas as guerras definidas do grupo (/api/war/:tag)
+    const clanDetailsPromise = Promise.all(
+      group.clans.map(c =>
+        api('/api/clan/' + encodeURIComponent(c.tag)).catch(() => null)
+      )
+    );
+
     const jobs = group.rounds.flatMap((r, i) =>
       (r.warTags || []).filter(t => t && t !== '#0').map(t => ({ roundIdx: i, warTag: t }))
     );
-    const results = await Promise.allSettled(jobs.map(j => api('/api/war/' + clean(j.warTag))));
+    const warResultsPromise = Promise.allSettled(jobs.map(j => api('/api/war/' + clean(j.warTag))));
+
+    const [clanDetailsList, results] = await Promise.all([clanDetailsPromise, warResultsPromise]);
+
+    // Associa o objeto `location` de cada clã retornado por /clans/{tag}
+    clanDetailsList.forEach((detail, idx) => {
+      const clanTag = group.clans[idx]?.tag;
+      if (clanTag && stats[clanTag]) {
+        stats[clanTag].location = detail?.location || null;
+      }
+    });
 
     const warsByRound = Array.from({ length: totalRounds }, () => []);
     let teamSize = null;
@@ -333,7 +499,7 @@
     };
   }
 
-  // ---------- ABA 1: CLASSIFICAÇÃO ----------
+  // ---------- ABA 1: CLASSIFICAÇÃO (Com Bandeira antes do Escudo) ----------
   function renderLeaderboard(standings) {
     const box = $('leaderboard'); box.replaceChildren();
     standings.forEach((s, i) => {
@@ -341,10 +507,19 @@
       row.append(mk('span', 'pos', i + 1));
       const status = i < 2 ? ['up', 'ph-fill ph-caret-up'] : i >= standings.length - 2 ? ['down', 'ph-fill ph-caret-down'] : ['mid', 'ph-bold ph-minus'];
       row.append(mk('i', `st ${status[0]} ${status[1]}`));
-      const img = mk('img'); img.src = s.clan.badgeUrls?.small || DEFAULT_BADGE; img.alt = '';
+
+      // Bandeira do país (ou ícone Internacional) imediatamente antes do escudo do clã
+      row.append(createLocationFlagNode(s.location, true));
+
+      const img = mk('img', 'row-shield');
+      img.src = s.clan.badgeUrls?.small || DEFAULT_BADGE;
+      img.alt = '';
       row.append(img, mk('div', 'nm', s.clan.name));
-      const st = mk('div', 'stars'); st.append(mk('i', 'ph-fill ph-star'), document.createTextNode(s.stars));
-      row.append(st); box.append(row);
+
+      const st = mk('div', 'stars');
+      st.append(mk('i', 'ph-fill ph-star'), document.createTextNode(s.stars));
+      row.append(st);
+      box.append(row);
     });
   }
 
@@ -625,6 +800,7 @@
 
       return {
         clan: s.clan,
+        location: s.location,
         simStars: totalSimulatedStars,
         destruction: s.destruction,
         earnedBonus,
@@ -644,7 +820,9 @@
       const status = idx < 2 ? ['up', 'ph-fill ph-caret-up'] : idx >= simStandings.length - 2 ? ['down', 'ph-fill ph-caret-down'] : ['mid', 'ph-bold ph-minus'];
       row.append(mk('i', `st ${status[0]} ${status[1]}`));
 
-      const img = mk('img');
+      row.append(createLocationFlagNode(item.location, true));
+
+      const img = mk('img', 'row-shield');
       img.src = item.clan.badgeUrls?.small || DEFAULT_BADGE;
       img.alt = '';
       row.append(img, mk('div', 'nm', item.clan.name));
@@ -676,16 +854,27 @@
     try {
       const clan = await api('/api/clan/' + tag);
       currentTag = tag;
+      const badgeSrc = clan.badgeUrls?.large || clan.badgeUrls?.medium || clan.badgeUrls?.small || DEFAULT_BADGE;
       $('clanName').textContent = clan.name;
-      $('clanBadge').src = clan.badgeUrls?.large || clan.badgeUrls?.medium || DEFAULT_BADGE;
+      $('clanBadge').src = badgeSrc;
       $('clanLeague').textContent = clan.warLeague?.name || 'Sem liga';
       $('clanSize').textContent = '';
+      updateBannerLocationAndLeague(clan);
+
       $('leaderboard').replaceChildren();
       el.roundsList.replaceChildren();
       $('seasonTitle').textContent = '';
       $('roundInfo').textContent = '';
+
+      // Salva no histórico de buscas recentes (máx 5 itens, sem duplicatas)
+      saveToSearchHistory({
+        tag,
+        name: clan.name,
+        badgeUrl: clan.badgeUrls?.small || badgeSrc,
+      });
+
       updateBannerStats(0, 0, 0);
-      updateFav(); showDashboard();
+      showDashboard();
 
       try {
         const group = await api('/api/league/' + tag);
@@ -720,26 +909,8 @@
         el.projNotice.textContent = msg;
       }
     } catch (e) {
-      showError(e.status === 404 ? 'Clã não encontrado.' : e.status === 400 ? 'Tag inválida.' : 'Erro ao consultar. Tente novamente.');
+      showError(e.status === 404 ? 'Clã não encontrado.' : e.status === 400 ? 'Tag inválida.' : 'Erro ao consultar a API. Tente novamente.');
     } finally { loading(false); }
-  }
-
-  // ---------- Renderização de Clãs Salvos (Mobile + Desktop) ----------
-  function populateSavedContainer(container, onSelect) {
-    const list = getSaved();
-    container.replaceChildren();
-    if (!list.length) {
-      container.append(mk('p', 'muted', 'Nenhum clã salvo ainda.'));
-      return;
-    }
-    list.forEach(c => {
-      const b = mk('button', '', `${c.name} (#${c.tag})`);
-      b.addEventListener('click', () => {
-        onSelect();
-        search(c.tag);
-      });
-      container.append(b);
-    });
   }
 
   // ---------- events ----------
@@ -756,30 +927,14 @@
     updateSimulation(Number(e.target.value));
   });
 
-  el.fav.addEventListener('click', () => {
-    if (!currentTag) return;
-    const list = getSaved();
-    const i = list.findIndex(c => c.tag === currentTag);
-    if (i >= 0) list.splice(i, 1); else list.push({ tag: currentTag, name: $('clanName').textContent });
-    setSaved(list); updateFav();
-  });
-
   const setMenu = open => { el.menu.classList.toggle('open', open); el.menu.setAttribute('aria-hidden', !open); };
   $('navMenuBtn').addEventListener('click', () => setMenu(true));
   $('closeMenuBtn').addEventListener('click', () => setMenu(false));
-
-  $('savedBtn').addEventListener('click', () => {
-    el.policy.hidden = true;
-    populateSavedContainer(el.saved, () => setMenu(false));
-    el.saved.hidden = !el.saved.hidden;
-  });
-  $('policyBtn').addEventListener('click', () => { el.saved.hidden = true; el.policy.hidden = !el.policy.hidden; });
+  $('policyBtn').addEventListener('click', () => { el.policy.hidden = !el.policy.hidden; });
 
   // Eventos da barra de navegação Desktop
   function closeDesktopPopovers() {
-    if (el.deskSavedList) el.deskSavedList.hidden = true;
     if (el.deskPolicyPopover) el.deskPolicyPopover.hidden = true;
-    if (el.deskSavedBtn) el.deskSavedBtn.setAttribute('aria-expanded', 'false');
     if (el.deskPolicyBtn) el.deskPolicyBtn.setAttribute('aria-expanded', 'false');
   }
 
@@ -787,19 +942,6 @@
     el.deskSearchBtn.addEventListener('click', () => {
       closeDesktopPopovers();
       showSearch();
-    });
-  }
-
-  if (el.deskSavedBtn) {
-    el.deskSavedBtn.addEventListener('click', e => {
-      e.stopPropagation();
-      const willOpen = el.deskSavedList.hidden;
-      closeDesktopPopovers();
-      if (willOpen) {
-        populateSavedContainer(el.deskSavedList, closeDesktopPopovers);
-        el.deskSavedList.hidden = false;
-        el.deskSavedBtn.setAttribute('aria-expanded', 'true');
-      }
     });
   }
 
@@ -819,5 +961,6 @@
 
   el.cwl.disabled = true;
 
+  renderSearchHistory();
   loadFeaturedClans();
 })();

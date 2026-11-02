@@ -1,4 +1,4 @@
-const STATIC_CACHE = 'cwl-static-v1';
+const STATIC_CACHE = 'cwl-static-v3';
 const API_CACHE = 'cwl-api-v1';
 
 const STATIC_ASSETS = [
@@ -7,13 +7,18 @@ const STATIC_ASSETS = [
   './style.css',
   './app.js',
   './manifest.json',
+  './assets/favicon.png',
   './assets/logo.png',
-  './assets/cw_icon.webp',
-  './assets/icone_fita_64.png',
-  './assets/icone_fita_mais_64.png'
+  './assets/logo_192.png',
+  './assets/logo_512.png',
+  './assets/cw_icon.png',
+  './assets/star_gold.png',
+  './assets/star_red.png',
+  './assets/bonus_star.png',
+  './assets/fonts/Clash_Regular.otf.ttf',
+  './assets/fonts/Clash_Bold.otf.ttf'
 ];
 
-// Instalação: faz o pré-cache dos arquivos estáticos essenciais (App Shell)
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(STATIC_CACHE)
@@ -22,7 +27,6 @@ self.addEventListener('install', event => {
   );
 });
 
-// Ativação: limpa versões antigas de cache
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(keys =>
@@ -35,16 +39,12 @@ self.addEventListener('activate', event => {
   );
 });
 
-// Interceptação de requisições:
-// - Rotas /api/*: Network-First com fallback para cache (permite consulta offline do último clã)
-// - Assets estáticos: Cache-First com atualização em segundo plano (Stale-While-Revalidate)
 self.addEventListener('fetch', event => {
   const { request } = event;
   if (request.method !== 'GET') return;
 
   const url = new URL(request.url);
 
-  // Estratégia Network-First para chamadas à API local (/api/clan, /api/league, /api/war)
   if (url.pathname.startsWith('/api/')) {
     event.respondWith(
       fetch(request)
@@ -60,7 +60,6 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Estratégia Cache-First para App Shell e assets locais
   event.respondWith(
     caches.match(request).then(cached => {
       const networkFetch = fetch(request)

@@ -1,5 +1,5 @@
 {
-  "name": "CWL Manager - Brazil Society",
+  "name": "CWL Manager",
   "short_name": "CWL Manager",
   "description": "Acompanhamento tático e projeções analíticas da Liga de Guerras de Clãs (CWL) do Clash of Clans.",
   "lang": "pt-BR",
@@ -11,19 +11,13 @@
   "theme_color": "#0b0618",
   "icons": [
     {
-      "src": "./assets/icone_fita_64.png",
-      "sizes": "64x64",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "./assets/cw_icon.webp",
+      "src": "./assets/logo_192.png",
       "sizes": "192x192",
-      "type": "image/webp",
+      "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "./assets/logo.png",
+      "src": "./assets/logo_512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
