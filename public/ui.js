@@ -724,7 +724,7 @@ export function renderRounds(data, currentTag) {
       const leftInfo = mk('div', 'round-team-info');
       leftInfo.append(
         mk('span', 'round-team-name', myClanName),
-        mk('span', 'round-team-attacks', `Attacks: 0/${teamSize}`)
+        mk('span', 'round-team-attacks', `Ataques: 0/${teamSize}`)
       );
       leftTeam.append(leftImg, leftInfo);
 
@@ -738,7 +738,7 @@ export function renderRounds(data, currentTag) {
       const rightInfo = mk('div', 'round-team-info');
       rightInfo.append(
         mk('span', 'round-team-name', 'A definir'),
-        mk('span', 'round-team-attacks', `Attacks: 0/${teamSize}`)
+        mk('span', 'round-team-attacks', `Ataques: 0/${teamSize}`)
       );
       rightTeam.append(rightImg, rightInfo);
 
@@ -751,8 +751,6 @@ export function renderRounds(data, currentTag) {
 
     const myStars = Number(item.mySide.stars || 0);
     const oppStars = Number(item.oppSide.stars || 0);
-    const myDest = Number(item.mySide.destructionPercentage || 0).toFixed(1);
-    const oppDest = Number(item.oppSide.destructionPercentage || 0).toFixed(1);
     const myAttacksCount = countSideAttacks(item.mySide);
     const oppAttacksCount = countSideAttacks(item.oppSide);
     const timeRemainingText = formatWarTimeRemaining(item.endTime, item.state);
@@ -809,7 +807,7 @@ export function renderRounds(data, currentTag) {
     const leftInfo = mk('div', 'round-team-info');
     leftInfo.append(
       mk('span', 'round-team-name', item.mySide.name),
-      mk('span', 'round-team-attacks', `Attacks: ${myAttacksCount}/${teamSize}`)
+      mk('span', 'round-team-attacks', `Ataques: ${myAttacksCount}/${teamSize}`)
     );
     leftTeam.append(leftImg, leftInfo);
 
@@ -820,8 +818,7 @@ export function renderRounds(data, currentTag) {
       mk('i', 'ph-fill ph-star'),
       document.createTextNode(` ${oppStars}`)
     );
-    const scoreDest = mk('span', 'round-dest', item.state === 'preparation' ? 'vs' : `${myDest}% × ${oppDest}%`);
-    scoreBox.append(scoreStars, scoreDest);
+    scoreBox.append(scoreStars);
 
     const rightTeam = mk('div', 'round-team opp');
     const rightImg = mk('img');
@@ -830,7 +827,7 @@ export function renderRounds(data, currentTag) {
     const rightInfo = mk('div', 'round-team-info');
     rightInfo.append(
       mk('span', 'round-team-name', item.oppSide.name),
-      mk('span', 'round-team-attacks', `Attacks: ${oppAttacksCount}/${teamSize}`)
+      mk('span', 'round-team-attacks', `Ataques: ${oppAttacksCount}/${teamSize}`)
     );
     rightTeam.append(rightImg, rightInfo);
 
@@ -841,7 +838,7 @@ export function renderRounds(data, currentTag) {
     timeWrap.append(mk('i', 'ph-bold ph-clock'), document.createTextNode(timeRemainingText));
 
     const ctaEl = mk('span', 'round-events-cta');
-    const ctaLabel = mk('span', '', 'Ver Eventos de Guerra');
+    const ctaLabel = mk('span', '', 'Eventos');
     const ctaIcon = mk('i', 'ph-bold ph-arrow-right');
     ctaEl.append(ctaLabel, ctaIcon);
 
