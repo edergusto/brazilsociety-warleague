@@ -1,14 +1,16 @@
-import { cleanTag, fetchClanData, fetchLeagueGroup } from './api.js';
-import { seasonLabel, loadStandings } from './projections.js';
-import { saveToSearchHistory } from './storage.js';
+import { cleanTag, fetchClanData, searchClansByName, fetchLeagueGroup } from './api.js';
+import { toggleFavorite } from './storage.js';
 import {
   $,
   el,
   mk,
   DEFAULT_BADGE,
-  FEATURED_TAGS,
+  seasonLabel,
+  loadStandings,
   updateBannerLocationAndLeague,
   updateBannerStats,
+  updateFavoriteButton,
+  renderSearchResults,
   showError,
   clearError,
   setLoading,
@@ -21,15 +23,13 @@ import {
   setMobileMenu,
   clearAppCache,
   closeDesktopPopovers,
-  renderSearchHistory,
-  createFeaturedCard,
   renderLeaderboard,
   renderRounds,
-  renderProjections,
-  updateSimulationUI,
+  renderRanking,
 } from './ui.js';
 
 let currentTag = null;
+let currentClanData = null;
 let currentLeagueData = null;
 
 // ---------- Registro do Service Worker (PWA) ----------
@@ -39,83 +39,40 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-// ---------- Carregamento dos Clãs em Destaque na Tela Inicial ----------
-async function loadFeaturedClans() {
-  if (!el.featured) return;
-  el.featured.replaceChildren();
-
-  const placeholders = FEATURED_TAGS.map(rawTag => {
-    const card = createFeaturedCard({
-      tag: rawTag,
-      name: 'Carregando clã…',
-      league: 'Consultando CWL…',
-      badgeUrl: DEFAULT_BADGE,
-    }, search);
-    el.featured.append(card);
-    return { rawTag, card };
-  });
-
-  await Promise.allSettled(
-    placeholders.map(async ({ rawTag, card }) => {
-      const normalizedWithHash = '#' + cleanTag(rawTag);
-      try {
-        const clan = await fetchClanData(rawTag);
-        const updatedCard = createFeaturedCard({
-          tag: clan.tag || normalizedWithHash,
-          name: clan.name || normalizedWithHash,
-          league: clan.warLeague?.name || 'Sem Liga',
-          warLeague: clan.warLeague,
-          badgeUrl: clan.badgeUrls?.medium || clan.badgeUrls?.large || clan.badgeUrls?.small || DEFAULT_BADGE,
-        }, search);
-        card.replaceWith(updatedCard);
-      } catch {
-        const fallbackCard = createFeaturedCard({
-          tag: normalizedWithHash,
-          name: `Clã ${normalizedWithHash}`,
-          league: 'Toque para buscar CWL',
-          badgeUrl: DEFAULT_BADGE,
-        }, search);
-        card.replaceWith(fallbackCard);
-      }
-    })
-  );
-}
-
 function handleReturnToSearch() {
   currentTag = null;
+  currentClanData = null;
   currentLeagueData = null;
-  showSearchView(search);
+  showSearchView();
 }
 
-// ---------- Fluxo Principal de Busca e Carregamento da CWL ----------
-async function search(raw) {
-  const tag = cleanTag(raw);
+/**
+ * Busca por Tag exata do clã (chamada diretamente ou ao selecionar um clã dos resultados)
+ */
+async function searchByTag(rawTag) {
+  const tag = cleanTag(rawTag);
   if (!tag) return showError('Digite a tag do clã.');
   clearError();
   setLoading(true);
+  if (el.searchResultsDropdown) el.searchResultsDropdown.hidden = true;
 
   try {
     const clan = await fetchClanData(tag);
     currentTag = tag;
+    currentClanData = clan;
     const badgeSrc = clan.badgeUrls?.large || clan.badgeUrls?.medium || clan.badgeUrls?.small || DEFAULT_BADGE;
 
     $('clanName').textContent = clan.name;
     $('clanBadge').src = badgeSrc;
     $('clanLeague').textContent = clan.warLeague?.name || 'Sem liga';
-    $('clanSize').textContent = '';
     updateBannerLocationAndLeague(clan);
+    updateFavoriteButton(tag);
 
     $('leaderboard').replaceChildren();
     el.roundsList.replaceChildren();
+    if (el.rankingList) el.rankingList.replaceChildren();
     $('seasonTitle').textContent = '';
     $('roundInfo').textContent = '';
-
-    saveToSearchHistory({
-      tag,
-      name: clan.name,
-      badgeUrl: clan.badgeUrls?.small || badgeSrc,
-    });
-    renderSearchHistory(search);
 
     updateBannerStats(0, 0, 0);
     showDashboardView();
@@ -129,8 +86,6 @@ async function search(raw) {
       currentLeagueData = leagueData;
 
       $('roundInfo').textContent = `Partida atual: ${leagueData.round}/${leagueData.totalRounds}`;
-      const n = leagueData.teamSize || group.clans.find(c => c.tag === '#' + tag)?.members?.length;
-      $('clanSize').textContent = n ? `${n}v${n}` : '15v15';
 
       const myStats = leagueData.statsByTag['#' + tag];
       if (myStats) {
@@ -139,7 +94,7 @@ async function search(raw) {
 
       renderLeaderboard(leagueData.standings, currentTag);
       renderRounds(leagueData, currentTag);
-      renderProjections(leagueData, currentTag);
+      renderRanking(leagueData);
     } catch (e) {
       currentLeagueData = null;
       $('seasonTitle').textContent = 'Liga de Guerras';
@@ -149,9 +104,7 @@ async function search(raw) {
         : 'Não foi possível carregar a liga.';
       $('leaderboard').append(mk('div', 'notice', msg));
       el.roundsList.append(mk('div', 'notice', msg));
-      el.projContent.hidden = true;
-      el.projNotice.hidden = false;
-      el.projNotice.textContent = msg;
+      if (el.rankingList) el.rankingList.append(mk('div', 'notice', msg));
     }
   } catch (e) {
     showError(
@@ -166,26 +119,70 @@ async function search(raw) {
   }
 }
 
+/**
+ * Roteamento Inteligente da Busca:
+ * - Se começar com '#' (ou for tag formatada como letras/números válidos sem espaços): busca por Tag.
+ * - Caso contrário: busca por Nome (/api/clans?name=...) e renderiza o dropdown de resultados.
+ */
+async function handleSearch(query) {
+  const trimmed = String(query || '').trim();
+  if (!trimmed) return showError('Digite o nome ou a tag do clã.');
+  clearError();
+
+  if (trimmed.startsWith('#')) {
+    return searchByTag(trimmed);
+  }
+
+  // Verifica se o texto é uma tag digitada sem hash (apenas caracteres válidos de tag de 3 a 12 letras sem vogais proibidas)
+  const clean = cleanTag(trimmed);
+  const isLikelyTag = clean.length >= 3 && clean.length <= 12 && /^[0289PYLQGRJCUV]+$/.test(clean) && !trimmed.includes(' ');
+
+  // Se o usuário digitou algo com espaço ou nome comum, busca por nome primeiro
+  setLoading(true);
+  try {
+    const searchRes = await searchClansByName(trimmed);
+    const items = Array.isArray(searchRes?.items) ? searchRes.items : [];
+
+    if (items.length > 0) {
+      renderSearchResults(items, searchByTag);
+      setLoading(false);
+      return;
+    }
+
+    // Se a busca por nome retornou vazio e o padrão lembra tag, tenta por tag
+    if (isLikelyTag) {
+      return searchByTag(trimmed);
+    }
+
+    renderSearchResults([], searchByTag);
+  } catch (err) {
+    if (isLikelyTag) {
+      return searchByTag(trimmed);
+    }
+    showError(err.message || 'Erro ao buscar clãs por nome.');
+  } finally {
+    setLoading(false);
+  }
+}
+
 // ---------- Eventos Principais (Controller) ----------
 function bindEvents() {
   el.tag.addEventListener('input', () => {
-    if (el.tag.value.startsWith('#')) el.tag.value = el.tag.value.slice(1);
     clearError();
   });
 
   el.form.addEventListener('submit', e => {
     e.preventDefault();
-    search(el.tag.value);
+    handleSearch(el.tag.value);
   });
 
   $('navSearch').addEventListener('click', handleReturnToSearch);
-  el.cwl.addEventListener('click', () => {
-    $('main').scrollTo({ top: 0, behavior: 'smooth' });
-  });
 
   el.tabStandingsBtn.addEventListener('click', () => switchTab('standings'));
   el.tabRoundsBtn.addEventListener('click', () => switchTab('rounds'));
-  el.tabProjectionsBtn.addEventListener('click', () => switchTab('projections'));
+  if (el.tabRankingBtn) {
+    el.tabRankingBtn.addEventListener('click', () => switchTab('ranking'));
+  }
 
   if (el.backToRoundsBtn) {
     el.backToRoundsBtn.addEventListener('click', hideWarEventsViewAndReturnToRounds);
@@ -203,12 +200,21 @@ function bindEvents() {
     el.exportReportBtn.addEventListener('click', exportReportToPng);
   }
 
-  el.simSlider.addEventListener('input', e => {
-    if (!currentLeagueData || !currentTag) return;
-    updateSimulationUI(currentLeagueData, currentTag, Number(e.target.value));
-  });
+  if (el.favoriteBtn) {
+    el.favoriteBtn.addEventListener('click', () => {
+      if (!currentTag) return;
+      const badgeSrc = currentClanData?.badgeUrls?.large || currentClanData?.badgeUrls?.medium || currentClanData?.badgeUrls?.small || DEFAULT_BADGE;
+      toggleFavorite({
+        tag: currentTag,
+        name: currentClanData?.name || `#${currentTag}`,
+        badgeUrl: badgeSrc,
+        warLeague: currentClanData?.warLeague || null,
+      });
+      updateFavoriteButton(currentTag);
+    });
+  }
 
-  $('navMenuBtn').addEventListener('click', () => setMobileMenu(true));
+  $('navMenuBtn').addEventListener('click', () => setMobileMenu(true, searchByTag));
   $('closeMenuBtn').addEventListener('click', () => setMobileMenu(false));
   if (el.clearCacheBtn) {
     el.clearCacheBtn.addEventListener('click', clearAppCache);
@@ -241,10 +247,7 @@ function bindEvents() {
 
 // ---------- Inicialização ----------
 function init() {
-  el.cwl.disabled = true;
   bindEvents();
-  renderSearchHistory(search);
-  loadFeaturedClans();
 }
 
 init();

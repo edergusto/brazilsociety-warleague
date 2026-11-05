@@ -1,22 +1,520 @@
 /**
  * ui.js
  * Módulo responsável por toda a manipulação do DOM, renderização de componentes
- * (Banner do Clã, Classificação, Confrontos, View Dedicada de War Events, Projeções, Simulador)
+ * (Banner do Clã, Classificação, Confrontos, View Dedicada de War Events, Relatório e Favoritos)
  * e gerenciamento de navegação SPA (Single Page Application).
  */
 
-import { cleanTag, isReportClanTag, fetchWarData, fetchNextRoundClanWar } from './api.js';
-import { getSearchHistory, MAX_HISTORY_ITEMS, DEFAULT_BADGE } from './storage.js';
 import {
-  CWL_TEAM_SIZE,
-  resolveWarWinner,
-  countSideAttacks,
-  formatWarTimeRemaining,
-  buildWarEvents,
-  buildClanPerformanceReport,
-  calculateProjectionsMetrics,
-  calculateSimulationScenario,
-} from './projections.js';
+  cleanTag,
+  isReportClanTag,
+  fetchClanData,
+  fetchWarData,
+  fetchNextRoundClanWar,
+  fetchGroupDetailsAndWars,
+  fetchLeagueGroupClanRoster,
+  calculatePlayerRatings,
+} from './api.js';
+import {
+  getFavorites,
+  isClanFavorite,
+  toggleFavorite,
+  DEFAULT_BADGE,
+} from './storage.js';
+
+export const CWL_TEAM_SIZE = 15;
+export const MAX_ATTACK_STARS = 45;
+export const WIN_BONUS_STARS = 10;
+
+export const MONTHS = [
+  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
+];
+
+export function seasonLabel(s) {
+  const [y, m] = (s || '').split('-');
+  return MONTHS[+m - 1] ? `${MONTHS[+m - 1]} de ${y}` : '—';
+}
+
+export function resolveWarWinner(clanA, clanB) {
+  const starsA = Number(clanA?.stars || 0);
+  const starsB = Number(clanB?.stars || 0);
+  if (starsA > starsB) return clanA.tag;
+  if (starsB > starsA) return clanB.tag;
+
+  const destA = Number(clanA?.destructionPercentage || 0);
+  const destB = Number(clanB?.destructionPercentage || 0);
+  if (destA > destB) return clanA.tag;
+  if (destB > destA) return clanB.tag;
+
+  return null;
+}
+
+export function extractSideAttacks(side) {
+  if (!side) return [];
+  const seen = new Set();
+  const list = [];
+
+  const pushAttack = atk => {
+    if (!atk || typeof atk !== 'object') return;
+    const key = `${atk.attackerTag || ''}_${atk.defenderTag || ''}_${atk.order ?? list.length}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    list.push(atk);
+  };
+
+  if (Array.isArray(side.attacks)) {
+    side.attacks.forEach(pushAttack);
+  }
+
+  if (Array.isArray(side.members)) {
+    side.members.forEach(m => {
+      if (Array.isArray(m.attacks)) {
+        m.attacks.forEach(atk => pushAttack({ ...atk, attackerTag: atk.attackerTag || m.tag }));
+      }
+    });
+  }
+
+  return list;
+}
+
+export function countSideAttacks(side) {
+  const extracted = extractSideAttacks(side);
+  if (extracted.length > 0) return extracted.length;
+  if (typeof side?.attacks === 'number') return side.attacks;
+  return 0;
+}
+
+export function parseCocTimestamp(raw) {
+  if (!raw) return NaN;
+  const str = String(raw).trim();
+  const compact = str.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(?:\.\d+)?Z?$/);
+  if (compact) {
+    const [, y, mo, d, h, mi, s] = compact;
+    return Date.UTC(+y, +mo - 1, +d, +h, +mi, +s);
+  }
+  return Date.parse(str);
+}
+
+export function formatWarTimeRemaining(endTime, state) {
+  const endMs = parseCocTimestamp(endTime);
+  if (Number.isNaN(endMs)) {
+    if (state === 'warEnded') return 'Encerrada';
+    if (state === 'preparation') return 'Em preparação';
+    return 'Em andamento';
+  }
+  const diffMs = endMs - Date.now();
+  if (state === 'warEnded' || diffMs <= 0) {
+    return 'Encerrada (0h 0m)';
+  }
+  const totalMins = Math.floor(diffMs / 60000);
+  const days = Math.floor(totalMins / 1440);
+  const hours = Math.floor((totalMins % 1440) / 60);
+  const mins = totalMins % 60;
+  if (days > 0) return `${days}d ${hours}h ${mins}m restantes`;
+  if (hours > 0) return `${hours}h ${mins}m restantes`;
+  return `${mins}m restantes`;
+}
+
+export function calculateMissedStarsInWar(side, warState) {
+  const earned = Number(side?.stars || 0);
+  const attacksMade = countSideAttacks(side);
+  if (warState === 'warEnded') {
+    const maxFromAttacks = attacksMade > 0 ? attacksMade * 3 : MAX_ATTACK_STARS;
+    const missedOnAttacks = Math.max(0, maxFromAttacks - earned);
+    const missedTotalBase = Math.max(0, MAX_ATTACK_STARS - earned);
+    return Math.max(missedOnAttacks, missedTotalBase);
+  }
+  if (attacksMade > 0) {
+    return Math.max(0, (attacksMade * 3) - earned);
+  }
+  return 0;
+}
+
+export function buildWarEvents(mySide, oppSide) {
+  const memberMap = new Map();
+  (mySide?.members || []).forEach(m => {
+    if (m?.tag) memberMap.set(m.tag, m.name || m.tag);
+  });
+  (oppSide?.members || []).forEach(m => {
+    if (m?.tag) memberMap.set(m.tag, m.name || m.tag);
+  });
+
+  const myAttacks = extractSideAttacks(mySide).map(atk => ({ ...atk, isMyAttack: true }));
+  const oppAttacks = extractSideAttacks(oppSide).map(atk => ({ ...atk, isMyAttack: false }));
+
+  const allAttacks = [...myAttacks, ...oppAttacks];
+  allAttacks.sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
+
+  const chronological = allAttacks.map((atk, idx) => {
+    const attackerName = memberMap.get(atk.attackerTag) || atk.attackerName || atk.attackerTag || 'Atacante';
+    const defenderName = memberMap.get(atk.defenderTag) || atk.defenderName || atk.defenderTag || 'Defensor';
+    const stars = Number(atk.stars || 0);
+    const pct = Number(atk.destructionPercentage || 0);
+    const destructionFormatted = Number.isInteger(pct) ? String(pct) : pct.toFixed(1);
+    return {
+      order: atk.order || idx + 1,
+      attackerName,
+      defenderName,
+      stars,
+      destructionFormatted,
+      isMyAttack: atk.isMyAttack,
+    };
+  });
+
+  return chronological.reverse();
+}
+
+let lastLoadedLeagueData = null;
+
+/**
+ * Calcula o histórico de participação de cada jogador até a rodada informada:
+ * - roundsPlayed: quantas rodadas o jogador foi escalado como titular (0 = prioridade máxima)
+ * - failedLastAttack: se o jogador falhou (< 3 estrelas ou sem ataque) na última rodada em que participou
+ */
+function buildPlayerRotationStats(myRoundsHistory = [], upToRoundDay = 7) {
+  const statsMap = new Map();
+
+  const ensurePlayer = (tag, name, th) => {
+    if (!statsMap.has(tag)) {
+      statsMap.set(tag, {
+        tag,
+        name: name || tag,
+        townHallLevel: Number(th) || 0,
+        roundsPlayed: 0,
+        failedLastAttack: false,
+      });
+    }
+    return statsMap.get(tag);
+  };
+
+  const sortedRounds = [...(Array.isArray(myRoundsHistory) ? myRoundsHistory : [])]
+    .filter(r => Number(r?.day) <= Number(upToRoundDay) && r?.mySide && Array.isArray(r.mySide.members))
+    .sort((a, b) => (Number(a.day) || 0) - (Number(b.day) || 0));
+
+  sortedRounds.forEach(round => {
+    const isCurrentUnfinished = Number(round.day) === Number(upToRoundDay) && round.state === 'preparation';
+    if (isCurrentUnfinished) return;
+
+    const sideAttacks = extractSideAttacks(round.mySide);
+    const attacksByAttacker = new Map();
+    sideAttacks.forEach(atk => {
+      if (!atk?.attackerTag) return;
+      if (!attacksByAttacker.has(atk.attackerTag)) {
+        attacksByAttacker.set(atk.attackerTag, []);
+      }
+      attacksByAttacker.get(atk.attackerTag).push(atk);
+    });
+
+    (round.mySide.members || []).forEach(m => {
+      if (!m?.tag) return;
+      const entry = ensurePlayer(m.tag, m.name, m.townhallLevel || m.townHallLevel);
+      entry.roundsPlayed += 1;
+
+      if (Number(round.day) < Number(upToRoundDay)) {
+        const mAtks = Array.isArray(m.attacks) && m.attacks.length > 0
+          ? m.attacks
+          : (attacksByAttacker.get(m.tag) || []);
+        const atk = mAtks[0] || null;
+        const stars = atk ? Number(atk.stars || 0) : 0;
+        if (round.state === 'warEnded') {
+          entry.failedLastAttack = !atk || stars < 3;
+        } else if (atk) {
+          entry.failedLastAttack = stars < 3;
+        }
+      }
+    });
+  });
+
+  return statsMap;
+}
+
+/**
+ * Ordena a fila de Reservas seguindo estritamente a prioridade:
+ * 1. Maior Prioridade (Topo da fila): Jogadores com 0 rodadas jogadas na liga até o momento.
+ * 2. Prioridade Intermediária: Jogadores com > 0 rodadas que não falharam ataque recentemente (menor nº de rodadas primeiro).
+ * 3. Menor Prioridade (Fim da fila): Jogadores que acabaram de falhar um ataque.
+ */
+function sortReservesQueue(reservesList, rotationStatsMap, currentActiveTags = new Set()) {
+  return [...reservesList].sort((a, b) => {
+    const statA = rotationStatsMap.get(a.tag);
+    const statB = rotationStatsMap.get(b.tag);
+
+    const roundsA = (statA?.roundsPlayed ?? 0) + (currentActiveTags.has(a.tag) && !statA ? 1 : 0);
+    const roundsB = (statB?.roundsPlayed ?? 0) + (currentActiveTags.has(b.tag) && !statB ? 1 : 0);
+
+    const justFailedA = a.justFailedAttack ? 1 : 0;
+    const justFailedB = b.justFailedAttack ? 1 : 0;
+    if (justFailedA !== justFailedB) return justFailedA - justFailedB;
+
+    const zeroRoundsA = roundsA === 0 ? 0 : 1;
+    const zeroRoundsB = roundsB === 0 ? 0 : 1;
+    if (zeroRoundsA !== zeroRoundsB) return zeroRoundsA - zeroRoundsB;
+
+    const prevFailedA = statA?.failedLastAttack ? 1 : 0;
+    const prevFailedB = statB?.failedLastAttack ? 1 : 0;
+    if (prevFailedA !== prevFailedB) return prevFailedA - prevFailedB;
+
+    if (roundsA !== roundsB) return roundsA - roundsB;
+
+    const thA = Number(a.townHallLevel || a.townhallLevel || statA?.townHallLevel || 0);
+    const thB = Number(b.townHallLevel || b.townhallLevel || statB?.townHallLevel || 0);
+    return thB - thA;
+  });
+}
+
+export function buildClanPerformanceReport(
+  mySide,
+  nextMySide = null,
+  fullRoster = [],
+  roundDay = 1,
+  myRoundsHistory = [],
+  warState = 'inWar'
+) {
+  const members = Array.isArray(mySide?.members) ? [...mySide.members] : [];
+  members.sort((a, b) => (Number(a.mapPosition) || 0) - (Number(b.mapPosition) || 0));
+
+  const nextMembers = Array.isArray(nextMySide?.members) ? [...nextMySide.members] : [];
+  nextMembers.sort((a, b) => (Number(a.mapPosition) || 0) - (Number(b.mapPosition) || 0));
+
+  const hasNextRoundRoster = nextMembers.length > 0;
+  const currentTags = new Set(members.map(m => m.tag));
+  const nextTags = new Set(nextMembers.map(m => m.tag));
+
+  const subbedOutMembers = hasNextRoundRoster
+    ? members.filter(m => !nextTags.has(m.tag))
+    : [];
+  const subbedInMembers = hasNextRoundRoster
+    ? nextMembers.filter(m => !currentTags.has(m.tag))
+    : [];
+
+  const subbedInByOutTag = new Map();
+  const usedReserveTags = new Set();
+  subbedOutMembers.forEach((outMember, idx) => {
+    const incoming = subbedInMembers[idx] || null;
+    if (incoming) {
+      subbedInByOutTag.set(outMember.tag, {
+        tag: incoming.tag,
+        name: incoming.name || incoming.tag,
+        mapPosition: incoming.mapPosition,
+      });
+      usedReserveTags.add(incoming.tag);
+    }
+  });
+
+  const rotationStatsMap = buildPlayerRotationStats(myRoundsHistory, roundDay);
+  const rawReserves = (Array.isArray(fullRoster) ? fullRoster : []).filter(
+    m => m?.tag && !currentTags.has(m.tag)
+  );
+  const prioritizedReserves = sortReservesQueue(rawReserves, rotationStatsMap, currentTags);
+  const availableQueue = prioritizedReserves.filter(r => !usedReserveTags.has(r.tag));
+
+  const attacksByAttacker = new Map();
+  extractSideAttacks(mySide).forEach(atk => {
+    if (!atk?.attackerTag) return;
+    if (!attacksByAttacker.has(atk.attackerTag)) {
+      attacksByAttacker.set(atk.attackerTag, []);
+    }
+    attacksByAttacker.get(atk.attackerTag).push(atk);
+  });
+
+  const relegatedPlayers = [];
+
+  const activeRows = members.map((member, idx) => {
+    const memberAttacks = Array.isArray(member.attacks) && member.attacks.length > 0
+      ? member.attacks
+      : (attacksByAttacker.get(member.tag) || []);
+
+    const atk = memberAttacks[0] || null;
+    const hasAttacked = Boolean(atk);
+    const stars = hasAttacked ? Number(atk.stars || 0) : 0;
+    const pct = hasAttacked ? Number(atk.destructionPercentage || 0) : 0;
+    const destructionFormatted = Number.isInteger(pct) ? String(pct) : pct.toFixed(1);
+
+    // Avaliação Imediata: Assim que o jogador ataca e faz < 3 estrelas (ou a guerra encerra sem ataque),
+    // projeta imediatamente sua substituição puxando o próximo jogador do topo da fila de Reservas.
+    const failedAttackNow = (hasAttacked && stars < 3) || (warState === 'warEnded' && !hasAttacked);
+    const substitutedOut = hasNextRoundRoster && !nextTags.has(member.tag);
+    const needsSubstitution = failedAttackNow || substitutedOut;
+
+    let substitutedIn = subbedInByOutTag.get(member.tag) || null;
+    if (needsSubstitution && !substitutedIn && availableQueue.length > 0) {
+      const nextFromQueue = availableQueue.shift();
+      if (nextFromQueue) {
+        substitutedIn = {
+          tag: nextFromQueue.tag,
+          name: nextFromQueue.name || nextFromQueue.tag,
+        };
+        usedReserveTags.add(nextFromQueue.tag);
+      }
+    }
+
+    if (needsSubstitution) {
+      relegatedPlayers.push({
+        tag: member.tag,
+        name: member.name || member.tag || `Jogador #${idx + 1}`,
+        townHallLevel: member.townhallLevel || member.townHallLevel,
+        justFailedAttack: true,
+      });
+    }
+
+    return {
+      lineupOrder: idx + 1,
+      mapPosition: member.mapPosition || idx + 1,
+      tag: member.tag,
+      name: member.name || member.tag || `Jogador #${idx + 1}`,
+      townhallLevel: member.townhallLevel,
+      hasAttacked,
+      stars,
+      destructionFormatted,
+      substitutedOut,
+      substitutedIn,
+      needsSubstitution,
+    };
+  });
+
+  return {
+    activeRows,
+    reservesQueue: [...availableQueue, ...relegatedPlayers],
+    rotationStatsMap,
+  };
+}
+
+export async function loadStandings(group, currentTag) {
+  const myFullTag = '#' + currentTag;
+  const totalRounds = Array.isArray(group.rounds) && group.rounds.length ? group.rounds.length : 7;
+  const stats = {};
+
+  group.clans.forEach(c => {
+    stats[c.tag] = {
+      clan: c,
+      location: null,
+      stars: 0,
+      attackStars: 0,
+      missedStars: 0,
+      bonusStars: 0,
+      destruction: 0,
+      warsPlayed: 0,
+      completedWars: 0,
+      wins: 0,
+    };
+  });
+
+  const { clanDetailsList, jobs, warResults } = await fetchGroupDetailsAndWars(group);
+
+  clanDetailsList.forEach((detail, idx) => {
+    const clanTag = group.clans[idx]?.tag;
+    if (clanTag && stats[clanTag]) {
+      stats[clanTag].location = detail?.location || null;
+    }
+  });
+
+  const warsByRound = Array.from({ length: totalRounds }, () => []);
+  let teamSize = null;
+
+  warResults.forEach((res, k) => {
+    if (res.status !== 'fulfilled' || !res.value) return;
+    const w = { ...res.value, warTag: jobs[k].warTag };
+    const rIdx = jobs[k].roundIdx;
+    teamSize = teamSize || w.teamSize;
+    warsByRound[rIdx].push(w);
+  });
+
+  let activeRoundIdx = -1;
+  for (let i = 0; i < totalRounds; i++) {
+    if (warsByRound[i].some(w => w.state === 'inWar')) { activeRoundIdx = i; break; }
+  }
+  if (activeRoundIdx === -1) {
+    for (let i = totalRounds - 1; i >= 0; i--) {
+      if (warsByRound[i].some(w => w.state === 'warEnded')) { activeRoundIdx = i; break; }
+    }
+  }
+  if (activeRoundIdx === -1) activeRoundIdx = 0;
+
+  const myRoundsHistory = [];
+
+  for (let i = 0; i < totalRounds; i++) {
+    const roundWars = warsByRound[i] || [];
+    let myMatchInRound = null;
+
+    for (const w of roundWars) {
+      if (w.clan?.tag === myFullTag) {
+        myMatchInRound = {
+          day: i + 1,
+          warTag: w.warTag,
+          state: w.state,
+          endTime: w.endTime,
+          startTime: w.startTime,
+          mySide: w.clan,
+          oppSide: w.opponent,
+          teamSize: w.teamSize || CWL_TEAM_SIZE,
+        };
+      } else if (w.opponent?.tag === myFullTag) {
+        myMatchInRound = {
+          day: i + 1,
+          warTag: w.warTag,
+          state: w.state,
+          endTime: w.endTime,
+          startTime: w.startTime,
+          mySide: w.opponent,
+          oppSide: w.clan,
+          teamSize: w.teamSize || CWL_TEAM_SIZE,
+        };
+      }
+
+      if (w.state === 'preparation') continue;
+      const size = w.teamSize || CWL_TEAM_SIZE;
+      const winnerTag = w.state === 'warEnded' ? resolveWarWinner(w.clan, w.opponent) : null;
+
+      [w.clan, w.opponent].forEach(side => {
+        if (!side || !stats[side.tag]) return;
+        const s = stats[side.tag];
+        const atkStars = Number(side.stars || 0);
+        const dest = Number(side.destructionPercentage || 0) * size;
+        const wonBonus = winnerTag && winnerTag === side.tag ? WIN_BONUS_STARS : 0;
+        const missed = calculateMissedStarsInWar(side, w.state);
+
+        s.stars += atkStars + wonBonus;
+        s.attackStars += atkStars;
+        s.missedStars += missed;
+        s.bonusStars += wonBonus;
+        s.destruction += dest;
+        s.warsPlayed += 1;
+        if (w.state === 'warEnded') {
+          s.completedWars += 1;
+          if (wonBonus > 0) s.wins += 1;
+        }
+      });
+    }
+
+    if (myMatchInRound) {
+      myRoundsHistory.push(myMatchInRound);
+    } else {
+      myRoundsHistory.push({ day: i + 1, state: 'unscheduled', mySide: null, oppSide: null, teamSize: CWL_TEAM_SIZE });
+    }
+  }
+
+  const myClanObj = (Array.isArray(group?.clans) ? group.clans : []).find(
+    c => cleanTag(c.tag) === cleanTag(currentTag)
+  );
+  const clanRoster = Array.isArray(myClanObj?.members) ? myClanObj.members : [];
+  const playerRankings = calculatePlayerRatings(clanRoster, myRoundsHistory);
+
+  const standings = Object.values(stats).sort((a, b) => b.stars - a.stars || b.destruction - a.destruction);
+  const leagueData = {
+    standings,
+    statsByTag: stats,
+    round: activeRoundIdx + 1,
+    activeRoundIdx,
+    totalRounds,
+    teamSize: teamSize || CWL_TEAM_SIZE,
+    myRoundsHistory,
+    clanRoster,
+    playerRankings,
+  };
+  lastLoadedLeagueData = leagueData;
+  return leagueData;
+}
 
 export const $ = id => document.getElementById(id);
 
@@ -26,8 +524,13 @@ export const el = {
   err: $('errorMsg'),
   btnText: $('btnText'),
   spin: $('btnSpinner'),
+  searchResultsDropdown: $('searchResultsDropdown'),
+  searchResultsCount: $('searchResultsCount'),
+  searchResultsList: $('searchResultsList'),
   search: $('searchView'),
   dash: $('dashboardView'),
+  favoriteBtn: $('favoriteBtn'),
+  menuFavoritesList: $('menuFavoritesList'),
   warEventsView: $('war-events-view'),
   backToRoundsBtn: $('back-to-rounds'),
   warEventsModeTabs: $('war-events-mode-tabs'),
@@ -40,10 +543,6 @@ export const el = {
   warEventsReportContainer: $('war-events-report-container'),
   warReportList: $('war-report-list'),
   exportReportBtn: $('export-report-btn'),
-  cwl: $('navCwl'),
-  featured: $('featuredClans'),
-  recentSection: $('recentSearchesSection'),
-  recentList: $('recentSearchesList'),
   menu: $('menu'),
   clearCacheBtn: $('clearCacheBtn'),
   policy: $('policyText'),
@@ -57,30 +556,18 @@ export const el = {
   statBonus: $('statStarsBonus'),
   tabStandingsBtn: $('tabStandingsBtn'),
   tabRoundsBtn: $('tabRoundsBtn'),
-  tabProjectionsBtn: $('tabProjectionsBtn'),
+  tabRankingBtn: $('tabRankingBtn'),
   tabStandings: $('tabStandings'),
   tabRounds: $('tabRounds'),
-  tabProjections: $('tabProjections'),
+  tabRanking: $('tabRanking'),
   roundsList: $('roundsList'),
-  projNotice: $('projectionsNotice'),
-  projContent: $('projectionsContent'),
-  promoBadge: $('promoBadge'),
-  promoText: $('promoText'),
-  survivalBadge: $('survivalBadge'),
-  survivalText: $('survivalText'),
-  h2hSubtitle: $('h2hSubtitle'),
-  h2hBadge: $('h2hBadge'),
-  h2hText: $('h2hText'),
-  simSubtitle: $('simSubtitle'),
-  simResultBadge: $('simResultBadge'),
-  simSlider: $('simSlider'),
-  simSliderValue: $('simSliderValue'),
-  simBonusInfo: $('simBonusInfo'),
-  simLeaderboard: $('simLeaderboard'),
+  rankingList: $('rankingList'),
 };
 
 export const WORLD_ICON_PATH = './assets/world_icon.png';
-export const FEATURED_TAGS = ['#2GYGRQPG2', '#2JRGG8J99'];
+export const UP_IMG_PATH = './assets/up.png';
+export const DOWN_IMG_PATH = './assets/down.png';
+export const STAY_IMG_PATH = './assets/stay.png';
 export { DEFAULT_BADGE };
 
 export const mk = (tag, cls, text) => {
@@ -90,10 +577,6 @@ export const mk = (tag, cls, text) => {
   return n;
 };
 
-/**
- * Extrai os 2 últimos dígitos do warLeague.id (ex: 48000018 -> "18")
- * e retorna o caminho local ./assets/{digits}.png
- */
 export function getLeagueIconPath(warLeague) {
   const id = warLeague?.id;
   if (!id) return null;
@@ -101,10 +584,6 @@ export function getLeagueIconPath(warLeague) {
   return `./assets/${extractedDigits}.png`;
 }
 
-/**
- * Cria o elemento visual de bandeira (Flag CDN) quando isCountry === true,
- * ou ícone de globo/mundo para clãs Internacionais (isCountry === false ou ausente).
- */
 export function createLocationFlagNode(location, forLeaderboard = false) {
   if (location?.isCountry && location?.countryCode) {
     const code = String(location.countryCode).toLowerCase();
@@ -128,9 +607,6 @@ export function createLocationFlagNode(location, forLeaderboard = false) {
   return worldImg;
 }
 
-/**
- * Atualiza o elemento #clanLocation e o ícone #clanLeagueIcon no Banner Principal do Clã
- */
 export function updateBannerLocationAndLeague(clan) {
   if (el.clanLoc) {
     el.clanLoc.replaceChildren();
@@ -157,10 +633,61 @@ export function updateBannerLocationAndLeague(clan) {
   }
 }
 
+/**
+ * Renderiza estritamente os números absolutos de estrelas ganhas, perdidas e bônus (sem prefixo "-" ou "+").
+ */
 export function updateBannerStats(gained = 0, lost = 0, bonus = 0) {
-  el.statGained.querySelector('span').textContent = String(gained);
-  el.statLost.querySelector('span').textContent = `-${lost}`;
-  el.statBonus.querySelector('span').textContent = `+${bonus}`;
+  el.statGained.querySelector('span').textContent = String(Math.abs(gained));
+  el.statLost.querySelector('span').textContent = String(Math.abs(lost));
+  el.statBonus.querySelector('span').textContent = String(Math.abs(bonus));
+}
+
+export function updateFavoriteButton(tag) {
+  if (!el.favoriteBtn) return;
+  const fav = isClanFavorite(tag);
+  el.favoriteBtn.classList.toggle('active', fav);
+  el.favoriteBtn.setAttribute('aria-pressed', String(fav));
+  el.favoriteBtn.title = fav ? 'Remover dos Favoritos' : 'Adicionar aos Favoritos';
+  const icon = el.favoriteBtn.querySelector('.fav-icon');
+  if (icon) {
+    icon.className = fav ? 'ph-fill ph-star fav-icon' : 'ph-bold ph-star fav-icon';
+  }
+}
+
+export function renderMenuFavorites(onSelectClan) {
+  if (!el.menuFavoritesList) return;
+  el.menuFavoritesList.replaceChildren();
+  const list = getFavorites();
+
+  if (!list.length) {
+    el.menuFavoritesList.append(
+      mk('div', 'menu-fav-empty', 'Nenhum clã favoritado ainda. Toque na estrela no banner do clã para salvar.')
+    );
+    return;
+  }
+
+  list.forEach(fav => {
+    const item = mk('button', 'menu-fav-item');
+    item.type = 'button';
+
+    const img = mk('img', 'menu-fav-badge');
+    img.src = fav.badgeUrl || DEFAULT_BADGE;
+    img.alt = '';
+
+    const info = mk('div', 'menu-fav-info');
+    info.append(
+      mk('span', 'menu-fav-name', fav.name),
+      mk('span', 'menu-fav-tag', `#${cleanTag(fav.tag)}`)
+    );
+
+    item.append(img, info, mk('i', 'ph-bold ph-caret-right menu-fav-arrow'));
+    item.addEventListener('click', () => {
+      setMobileMenu(false);
+      if (typeof onSelectClan === 'function') onSelectClan(fav.tag);
+    });
+
+    el.menuFavoritesList.append(item);
+  });
 }
 
 export function showError(msg) {
@@ -179,7 +706,6 @@ export function setLoading(on) {
   el.spin.hidden = !on;
 }
 
-// ---------- SPA Navigation & View Switching ----------
 function setElementVisibility(node, visible) {
   if (!node) return;
   node.hidden = !visible;
@@ -190,9 +716,10 @@ export function switchTab(tabName) {
   const tabs = [
     { name: 'standings', btn: el.tabStandingsBtn, panel: el.tabStandings },
     { name: 'rounds', btn: el.tabRoundsBtn, panel: el.tabRounds },
-    { name: 'projections', btn: el.tabProjectionsBtn, panel: el.tabProjections },
+    { name: 'ranking', btn: el.tabRankingBtn, panel: el.tabRanking },
   ];
   tabs.forEach(t => {
+    if (!t.btn || !t.panel) return;
     const active = t.name === tabName;
     t.btn.classList.toggle('active', active);
     t.btn.setAttribute('aria-selected', String(active));
@@ -200,25 +727,20 @@ export function switchTab(tabName) {
   });
 }
 
-export function showSearchView(onSelectTag) {
+export function showSearchView() {
   setElementVisibility(el.dash, false);
   setElementVisibility(el.warEventsView, false);
   setElementVisibility(el.search, true);
-  el.cwl.classList.remove('active');
-  el.cwl.disabled = true;
   el.tag.value = '';
   clearError();
-  renderSearchHistory(onSelectTag);
+  if (el.searchResultsDropdown) el.searchResultsDropdown.hidden = true;
 }
 
 export function showDashboardView() {
   setElementVisibility(el.search, false);
   setElementVisibility(el.warEventsView, false);
   setElementVisibility(el.dash, true);
-  const cwlImg = el.cwl.querySelector('img');
-  if (cwlImg) cwlImg.src = DEFAULT_BADGE;
-  el.cwl.classList.add('active');
-  el.cwl.disabled = false;
+  if (el.searchResultsDropdown) el.searchResultsDropdown.hidden = true;
   switchTab('standings');
   $('main').scrollTop = 0;
 }
@@ -237,38 +759,31 @@ export function hideWarEventsViewAndReturnToRounds() {
   $('main').scrollTop = 0;
 }
 
-export function setMobileMenu(open) {
+export function setMobileMenu(open, onSelectClan) {
   el.menu.classList.toggle('open', open);
   el.menu.setAttribute('aria-hidden', !open);
+  if (open) {
+    renderMenuFavorites(onSelectClan);
+  }
 }
 
-/**
- * Limpa completamente o localStorage e todos os caches do Service Worker (PWA Cache Storage),
- * exibe alerta de confirmação e recarrega a aplicação do zero.
- */
 export async function clearAppCache() {
   try {
     localStorage.clear();
     sessionStorage.clear();
-  } catch {
-    // Ignora bloqueios de storage
-  }
+  } catch {}
 
   if ('caches' in window) {
     try {
       await caches.keys().then(keys => Promise.all(keys.map(key => caches.delete(key))));
-    } catch {
-      // Ignora falhas da API de Cache
-    }
+    } catch {}
   }
 
   if ('serviceWorker' in navigator) {
     try {
       const registrations = await navigator.serviceWorker.getRegistrations();
       await Promise.all(registrations.map(reg => reg.unregister()));
-    } catch {
-      // Ignora falhas de Service Worker
-    }
+    } catch {}
   }
 
   window.alert('Cache limpo com sucesso!');
@@ -280,86 +795,72 @@ export function closeDesktopPopovers() {
   if (el.deskPolicyBtn) el.deskPolicyBtn.setAttribute('aria-expanded', 'false');
 }
 
-export function renderSearchHistory(onSelectTag) {
-  if (!el.recentSection || !el.recentList) return;
-  const history = getSearchHistory();
-  el.recentList.replaceChildren();
+/**
+ * Renderiza o dropdown dinâmico com a lista de resultados da busca por nome.
+ * Exibe: Escudo, Nome do Clã, Liga de Guerra (ícone + nome) e Membros (ex: "45/50").
+ */
+export function renderSearchResults(clans, onSelectClan) {
+  if (!el.searchResultsDropdown || !el.searchResultsList) return;
+  el.searchResultsList.replaceChildren();
 
-  if (!history.length) {
-    el.recentSection.hidden = true;
+  if (!clans || clans.length === 0) {
+    el.searchResultsCount.textContent = '0 encontrados';
+    el.searchResultsList.append(mk('div', 'search-result-empty', 'Nenhum clã encontrado com este nome.'));
+    el.searchResultsDropdown.hidden = false;
     return;
   }
 
-  el.recentSection.hidden = false;
-  history.slice(0, MAX_HISTORY_ITEMS).forEach(item => {
-    const itemTag = cleanTag(item.tag);
-    const btn = mk('button', 'recent-item');
-    btn.type = 'button';
-    btn.setAttribute('aria-label', `Buscar novamente o clã ${item.name}`);
+  el.searchResultsCount.textContent = `${clans.length} encontrado(s)`;
 
-    const img = mk('img', 'recent-badge');
-    img.src = item.badgeUrl || DEFAULT_BADGE;
-    img.alt = '';
+  clans.forEach(clan => {
+    const item = mk('button', 'search-result-row');
+    item.type = 'button';
 
-    const info = mk('div', 'recent-info');
-    info.append(
-      mk('span', 'recent-name', item.name),
-      mk('span', 'recent-tag', `#${itemTag}`)
+    const badge = mk('img', 'search-result-badge');
+    badge.src = clan.badgeUrls?.small || clan.badgeUrls?.medium || DEFAULT_BADGE;
+    badge.alt = '';
+
+    const info = mk('div', 'search-result-info');
+    const titleRow = mk('div', 'search-result-title-row');
+    titleRow.append(
+      mk('span', 'search-result-name', clan.name),
+      mk('span', 'search-result-tag', clan.tag)
     );
 
-    btn.append(img, info, mk('i', 'ph-bold ph-arrow-right recent-go'));
-    btn.addEventListener('click', () => {
-      el.tag.value = itemTag;
-      if (typeof onSelectTag === 'function') onSelectTag(itemTag);
+    const metaRow = mk('div', 'search-result-meta-row');
+    const leagueWrap = mk('span', 'search-result-league');
+    const iconPath = getLeagueIconPath(clan.warLeague);
+    if (iconPath) {
+      const lImg = mk('img', 'search-result-league-icon');
+      lImg.src = iconPath;
+      lImg.alt = '';
+      lImg.onerror = () => lImg.remove();
+      leagueWrap.append(lImg);
+    }
+    leagueWrap.append(document.createTextNode(clan.warLeague?.name || 'Sem liga'));
+
+    const membersBadge = mk('span', 'search-result-members', `${clan.members || 0}/50`);
+    metaRow.append(leagueWrap, membersBadge);
+
+    info.append(titleRow, metaRow);
+    item.append(badge, info, mk('i', 'ph-bold ph-caret-right search-result-arrow'));
+
+    item.addEventListener('click', () => {
+      el.searchResultsDropdown.hidden = true;
+      if (typeof onSelectClan === 'function') onSelectClan(clan.tag);
     });
 
-    el.recentList.append(btn);
-  });
-}
-
-export function createFeaturedCard({ tag, name, league, warLeague, badgeUrl }, onSelectTag) {
-  const normalizedTag = cleanTag(tag);
-  const btn = mk('button', 'featured-card');
-  btn.type = 'button';
-  btn.setAttribute('aria-label', `Abrir CWL do clã ${name}`);
-
-  const img = mk('img', 'featured-badge');
-  img.src = badgeUrl || DEFAULT_BADGE;
-  img.alt = `Escudo ${name}`;
-
-  const body = mk('div', 'featured-body');
-  const nameRow = mk('div', 'featured-name-row');
-  nameRow.append(
-    mk('span', 'featured-name', name),
-    mk('span', 'featured-tag', `#${normalizedTag}`)
-  );
-
-  const leaguePill = mk('span', 'featured-league');
-  const leagueIconPath = getLeagueIconPath(warLeague);
-  if (leagueIconPath) {
-    const lImg = mk('img');
-    lImg.src = leagueIconPath;
-    lImg.alt = '';
-    lImg.onerror = () => lImg.replaceWith(mk('i', 'ph-fill ph-trophy'));
-    leaguePill.append(lImg);
-  } else {
-    leaguePill.append(mk('i', 'ph-fill ph-trophy'));
-  }
-  leaguePill.append(document.createTextNode(league));
-
-  body.append(nameRow, leaguePill);
-  btn.append(img, body, mk('i', 'ph-bold ph-caret-right featured-arrow'));
-
-  btn.addEventListener('click', () => {
-    el.tag.value = normalizedTag;
-    if (typeof onSelectTag === 'function') onSelectTag(normalizedTag);
+    el.searchResultsList.append(item);
   });
 
-  return btn;
+  el.searchResultsDropdown.hidden = false;
 }
 
 /**
- * Renderiza a Aba 1: Classificação (com Bandeira do País antes do Escudo do Clã)
+ * Renderiza a Aba 1: Classificação usando estritamente as imagens locais para tendências:
+ * - Top 2: <img src="assets/up.png" alt="Up">
+ * - Últimos 2: <img src="assets/down.png" alt="Down">
+ * - Meio de tabela: <img src="assets/stay.png" alt="Stay">
  */
 export function renderLeaderboard(standings, currentTag) {
   const box = $('leaderboard');
@@ -367,12 +868,19 @@ export function renderLeaderboard(standings, currentTag) {
   standings.forEach((s, i) => {
     const row = mk('div', 'row' + (s.clan.tag === '#' + currentTag ? ' me' : ''));
     row.append(mk('span', 'pos', i + 1));
-    const status = i < 2
-      ? ['up', 'ph-fill ph-caret-up']
-      : i >= standings.length - 2
-        ? ['down', 'ph-fill ph-caret-down']
-        : ['mid', 'ph-bold ph-minus'];
-    row.append(mk('i', `st ${status[0]} ${status[1]}`));
+
+    const trendImg = mk('img', 'trend-icon');
+    if (i < 2) {
+      trendImg.src = UP_IMG_PATH;
+      trendImg.alt = 'Up';
+    } else if (i >= standings.length - 2) {
+      trendImg.src = DOWN_IMG_PATH;
+      trendImg.alt = 'Down';
+    } else {
+      trendImg.src = STAY_IMG_PATH;
+      trendImg.alt = 'Stay';
+    }
+    row.append(trendImg);
 
     row.append(createLocationFlagNode(s.location, true));
 
@@ -389,8 +897,85 @@ export function renderLeaderboard(standings, currentTag) {
 }
 
 /**
- * Renderiza a lista flat de ataques filtrada por clã ('all' | 'my' | 'opp').
+ * Renderiza a Aba 3: Ranking de Jogadores (Sistema de Rating 0 a 2000 pontos).
+ * - Cada linha exibe: Posição (#1, #2...), Nome do Jogador e Rating (ex: "🏆 1850").
+ * - Ao clicar na linha, expande/recolhe o resumo estatístico do jogador:
+ *   Total de Estrelas, Destruição Média, Tempo Médio e Rodadas Jogadas.
  */
+export function renderRanking(leagueData) {
+  const box = el.rankingList;
+  if (!box) return;
+  box.replaceChildren();
+
+  const rankings = Array.isArray(leagueData?.playerRankings)
+    ? leagueData.playerRankings
+    : calculatePlayerRatings(leagueData?.clanRoster || [], leagueData?.myRoundsHistory || []);
+
+  if (!rankings.length) {
+    box.append(mk('div', 'notice', 'Nenhum jogador encontrado no elenco desta CWL.'));
+    return;
+  }
+
+  rankings.forEach(player => {
+    const card = mk('div', 'ranking-card' + (player.rank <= 3 && player.rating > 0 ? ` top-${player.rank}` : ''));
+    card.setAttribute('role', 'button');
+    card.setAttribute('tabindex', '0');
+    card.setAttribute('aria-expanded', 'false');
+
+    const mainRow = mk('div', 'ranking-main');
+    const posEl = mk('span', 'ranking-pos', `#${player.rank}`);
+    const nameWrap = mk('div', 'ranking-name-wrap');
+    nameWrap.append(mk('span', 'ranking-name', player.name));
+
+    const rightWrap = mk('div', 'ranking-right');
+    const scoreBadge = mk('span', 'ranking-score', `🏆 ${player.rating}`);
+    const caretIcon = mk('i', 'ph-bold ph-caret-down ranking-caret');
+    rightWrap.append(scoreBadge, caretIcon);
+
+    mainRow.append(posEl, nameWrap, rightWrap);
+
+    const details = mk('div', 'ranking-details');
+    details.hidden = true;
+
+    const statsGrid = mk('div', 'ranking-stats-grid');
+    const statItems = [
+      { label: 'Estrelas Totais', value: `${player.totalStars}★` },
+      { label: 'Destruição Média', value: player.avgDestructionFormatted },
+      { label: 'Tempo Médio', value: player.avgTimeFormatted },
+      { label: 'Rodadas Jogadas', value: `${player.roundsPlayed}` },
+    ];
+
+    statItems.forEach(st => {
+      const boxItem = mk('div', 'ranking-stat-box');
+      boxItem.append(
+        mk('span', 'ranking-stat-label', st.label),
+        mk('span', 'ranking-stat-value', st.value)
+      );
+      statsGrid.append(boxItem);
+    });
+
+    details.append(statsGrid);
+    card.append(mainRow, details);
+
+    const toggleExpand = () => {
+      const willExpand = details.hidden;
+      details.hidden = !willExpand;
+      card.classList.toggle('expanded', willExpand);
+      card.setAttribute('aria-expanded', String(willExpand));
+    };
+
+    card.addEventListener('click', toggleExpand);
+    card.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        toggleExpand();
+      }
+    });
+
+    box.append(card);
+  });
+}
+
 function renderFilteredWarEventsList(warEvents, activeFilter = 'all') {
   if (!el.warEventsListContainer) return;
   el.warEventsListContainer.replaceChildren();
@@ -455,13 +1040,6 @@ export function switchWarEventsMode(mode = 'events') {
   setElementVisibility(el.warEventsReportContainer, isReport);
 }
 
-/**
- * Exporta o contêiner de Relatório (#war-report-list) como imagem PNG usando html2canvas:
- * 1. Insere temporariamente o cabeçalho dinâmico `.export-header` ("Relatório - Rodada [X]").
- * 2. Gera o canvas e remove imediatamente o `.export-header` do DOM.
- * 3. Converte para Blob/File e utiliza Web Share API no iOS/PWA (`navigator.canShare` / `navigator.share`)
- *    ou fallback de download via `URL.createObjectURL(blob)` no Desktop.
- */
 export async function exportReportToPng() {
   if (!el.warReportList || typeof window.html2canvas !== 'function') return;
 
@@ -473,20 +1051,7 @@ export async function exportReportToPng() {
   if (btn) btn.disabled = true;
   if (labelSpan) labelSpan.textContent = 'Gerando…';
 
-  // 1. Dynamic Round Header (Export Prep)
-  const exportHeader = document.createElement('div');
-  exportHeader.className = 'export-header';
-  exportHeader.style.cssText =
-    "text-align: center; margin-bottom: 15px; padding: 14px 12px 10px; font-family: 'ClashBold', 'Supercell', sans-serif; color: #fff; border-bottom: 1px solid rgba(255, 255, 255, 0.08);";
-  const headerTitle = document.createElement('h2');
-  headerTitle.textContent = `Relatório - Rodada ${roundNumber}`;
-  headerTitle.style.cssText = 'font-size: 1.05rem; letter-spacing: 0.03em; color: #fbbf24; margin: 0;';
-  exportHeader.appendChild(headerTitle);
-
-  el.warReportList.prepend(exportHeader);
-
   try {
-    // 2. Canvas Generation & Immediate DOM Cleanup
     const canvas = await window.html2canvas(el.warReportList, {
       backgroundColor: '#100920',
       scale: 2,
@@ -494,9 +1059,6 @@ export async function exportReportToPng() {
       logging: false,
     });
 
-    exportHeader.remove();
-
-    // 3. Device-Aware Image Export: Web Share API APENAS no Mobile PWA instalado; download direto nos demais casos
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
     const isMobilePWA = isStandalone && isMobile;
@@ -523,32 +1085,62 @@ export async function exportReportToPng() {
       setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
     }
   } catch {
-    // Ignora cancelamento do share sheet ou falha silenciosamente
   } finally {
-    if (exportHeader.parentNode) {
-      exportHeader.remove();
-    }
     if (btn) btn.disabled = false;
     if (labelSpan) labelSpan.textContent = prevLabel;
   }
 }
 
 /**
- * Renderiza o Relatório dos 15 jogadores do clã na guerra (ordenados por mapPosition),
- * comparando com a próxima rodada para mapear substituições:
- * Ex: "Player A [Red Down] ➔ Player B [Green Up]"
+ * Renderiza o Relatório dos 15 jogadores "Titulares" e da fila de "Reservas":
+ * 1. Cabeçalhos: "Titulares" e "Reservas", com `.report-section-hint` exibindo "Rodada [X]".
+ * 2. Avaliação em tempo real: Assim que um titular ataca e faz < 3 estrelas (ou a guerra encerra sem ataque),
+ *    projeta imediatamente sua substituição puxando o próximo jogador do topo da fila de "Reservas".
+ * 3. Prioridade da Fila de Reservas:
+ *    - Maior Prioridade (Topo): Jogadores com 0 rodadas jogadas na liga até o momento.
+ *    - Menor Prioridade (Fim): Jogadores que acabaram de falhar um ataque vão para o final da fila.
  */
-function renderClanPerformanceReport(mySide, nextMySide = null) {
+function renderClanPerformanceReport(
+  mySide,
+  nextMySide = null,
+  fullRoster = [],
+  roundDay = 1,
+  myRoundsHistory = [],
+  warState = 'inWar'
+) {
   if (!el.warReportList) return;
   el.warReportList.replaceChildren();
 
-  const reportRows = buildClanPerformanceReport(mySide, nextMySide);
+  const effectiveHistory = Array.isArray(myRoundsHistory) && myRoundsHistory.length > 0
+    ? myRoundsHistory
+    : (lastLoadedLeagueData?.myRoundsHistory || []);
+  const effectiveRoster = Array.isArray(fullRoster) && fullRoster.length > 0
+    ? fullRoster
+    : (lastLoadedLeagueData?.clanRoster || []);
+
+  const { activeRows: reportRows, reservesQueue, rotationStatsMap } = buildClanPerformanceReport(
+    mySide,
+    nextMySide,
+    effectiveRoster,
+    roundDay,
+    effectiveHistory,
+    warState
+  );
+
   if (reportRows.length === 0) {
     el.warReportList.append(
       mk('div', 'war-events-empty', 'Escalação não disponível para esta rodada.')
     );
     return;
   }
+
+  // 1. Cabeçalho dos 15 Titulares
+  const activeSectionBar = mk('div', 'report-section-divider first');
+  activeSectionBar.append(
+    mk('span', 'label', 'Titulares'),
+    mk('span', 'report-section-hint', `Rodada ${roundDay}`)
+  );
+  el.warReportList.append(activeSectionBar);
 
   reportRows.forEach(player => {
     const row = mk(
@@ -557,30 +1149,53 @@ function renderClanPerformanceReport(mySide, nextMySide = null) {
     );
 
     const posEl = mk('span', 'war-event-num', `#${player.lineupOrder}`);
-
     const playerCol = mk('div', 'war-report-player');
-    playerCol.append(mk('span', 'war-report-name', player.name));
 
-    if (player.needsSubstitution) {
-      const penaltyArrow = mk('i', 'ph-bold ph-arrow-down report-penalty-arrow');
-      penaltyArrow.style.color = '#ff4444';
-      penaltyArrow.title = player.substitutedOut
-        ? 'Substituído na próxima rodada'
-        : player.hasAttacked
-          ? `Apenas ${player.stars} estrela(s) — sugerida substituição`
-          : 'Ataque não realizado — sugerida substituição';
-      penaltyArrow.setAttribute('aria-label', 'Substituído / Penalidade');
-      playerCol.append(penaltyArrow);
-    }
-
+    // Layout Vertical de Substituição
     if (player.substitutedIn) {
-      const sepEl = mk('span', 'report-sub-sep', '➔');
-      const inNameEl = mk('span', 'report-sub-in-name', player.substitutedIn.name);
-      const upArrow = mk('i', 'ph-bold ph-arrow-up report-sub-in-arrow');
-      upArrow.style.color = '#22c55e';
-      upArrow.title = `Entrou na próxima rodada: ${player.substitutedIn.name}`;
-      upArrow.setAttribute('aria-label', 'Substituto que entrou');
-      playerCol.append(sepEl, inNameEl, upArrow);
+      playerCol.classList.add('sub-vertical');
+
+      // Linha 1: Substituto (quem entra)
+      const inLine = mk('div', 'sub-line in-line');
+      inLine.append(
+        mk('span', 'war-report-name', player.substitutedIn.name),
+        (() => {
+          const img = mk('img', 'trend-icon report-trend');
+          img.src = UP_IMG_PATH;
+          img.alt = 'Up';
+          img.title = `Entra na próxima rodada: ${player.substitutedIn.name}`;
+          return img;
+        })()
+      );
+
+      // Linha 2: Substituído (quem sai)
+      const outLine = mk('div', 'sub-line out-line');
+      outLine.append(
+        mk('span', 'war-report-name', player.name),
+        (() => {
+          const img = mk('img', 'trend-icon report-trend');
+          img.src = DOWN_IMG_PATH;
+          img.alt = 'Down';
+          img.title = 'Substituído na próxima rodada';
+          return img;
+        })()
+      );
+
+      playerCol.append(inLine, outLine);
+    } else {
+      playerCol.append(mk('span', 'war-report-name', player.name));
+
+      if (player.needsSubstitution) {
+        const downImg = mk('img', 'trend-icon report-trend');
+        downImg.src = DOWN_IMG_PATH;
+        downImg.alt = 'Down';
+        downImg.title = player.substitutedOut
+          ? 'Substituído na próxima rodada'
+          : player.hasAttacked
+            ? `Apenas ${player.stars} estrela(s) — sugerida substituição`
+            : 'Ataque não realizado — sugerida substituição';
+        playerCol.append(downImg);
+      }
     }
 
     let outcomeEl;
@@ -602,13 +1217,46 @@ function renderClanPerformanceReport(mySide, nextMySide = null) {
     row.append(posEl, playerCol, outcomeEl);
     el.warReportList.append(row);
   });
+
+  // 2. Seção de Reservas (Fila Priorizada)
+  if (reservesQueue.length > 0) {
+    const divider = mk('div', 'report-section-divider');
+    divider.append(
+      mk('span', 'label', 'Reservas'),
+      mk('span', 'report-section-hint', `Rodada ${roundDay}`)
+    );
+    el.warReportList.append(divider);
+
+    reservesQueue.forEach((res, idx) => {
+      const row = mk('div', 'war-report-row reserve-row');
+      const posEl = mk('span', 'war-event-num', `#${idx + 1}`);
+
+      const playerCol = mk('div', 'war-report-player');
+      playerCol.append(mk('span', 'war-report-name', res.name || res.tag));
+
+      const thLevel = res.townHallLevel || res.townhallLevel;
+      if (thLevel) {
+        const thTag = mk('span', 'war-report-bench-tag', `CV${thLevel}`);
+        playerCol.append(thTag);
+      }
+
+      const stat = rotationStatsMap.get(res.tag);
+      const roundsPlayed = stat?.roundsPlayed ?? 0;
+      const statusText = res.justFailedAttack
+        ? 'Fim da fila'
+        : roundsPlayed === 0
+          ? '0 rodadas'
+          : `${roundsPlayed} rod.`;
+
+      const statusTag = mk('span', 'war-report-bench-tag', statusText);
+
+      row.append(posEl, playerCol, statusTag);
+      el.warReportList.append(row);
+    });
+  }
 }
 
-/**
- * Popula a view dedicada #war-events-view com os dados da guerra buscada sob demanda (Lazy Loading)
- * e alterna a visualização SPA.
- */
-export function populateAndShowWarEventsView(warData, day, currentTag, nextWarData = null) {
+export function populateAndShowWarEventsView(warData, day, currentTag, nextWarData = null, fullRoster = []) {
   activeReportRoundDay = Number(day) || 1;
   const myFullTag = '#' + cleanTag(currentTag);
   const isClanSide = warData.clan?.tag === myFullTag;
@@ -635,18 +1283,23 @@ export function populateAndShowWarEventsView(warData, day, currentTag, nextWarDa
   const oppAttacksCount = countSideAttacks(oppSide);
   const timeRemainingText = formatWarTimeRemaining(warData.endTime, warData.state);
 
-  // Condição Crítica: Exibe as abas "War Events" e "Relatório" APENAS se o clã atual for #2GYGRQPG2 (%232GYGRQPG2)
   const isSpecialClan = isReportClanTag(currentTag);
   setElementVisibility(el.warEventsModeTabs, isSpecialClan);
   switchWarEventsMode('events');
 
   if (isSpecialClan) {
-    renderClanPerformanceReport(mySide, nextMySide);
+    renderClanPerformanceReport(
+      mySide,
+      nextMySide,
+      fullRoster,
+      activeReportRoundDay,
+      lastLoadedLeagueData?.myRoundsHistory || [],
+      warData.state
+    );
   } else if (el.warReportList) {
     el.warReportList.replaceChildren();
   }
 
-  // Cabeçalho do Confronto (sem título redundante, com "Ataques: X/Y")
   if (el.warEventsHeader) {
     el.warEventsHeader.replaceChildren();
 
@@ -663,23 +1316,25 @@ export function populateAndShowWarEventsView(warData, day, currentTag, nextWarDa
     );
 
     const centerScore = mk('div', 'war-events-hero-score');
-    const starsLine = mk('div', 'war-events-hero-stars');
-    const goldStarHero = mk('img');
-    goldStarHero.src = 'assets/gold_star.png';
-    goldStarHero.alt = 'Stars';
-    starsLine.append(
+    const starsRow = mk('div', 'war-events-hero-stars');
+    starsRow.append(
       document.createTextNode(`${myStars} `),
-      goldStarHero,
+      mk('img', '', ''),
       document.createTextNode(` ${oppStars}`)
     );
-    const destLine = mk(
-      'span',
-      'war-events-hero-dest',
-      warData.state === 'preparation' ? 'Em preparação' : `${myDest}% × ${oppDest}%`
+    const centerStarImg = starsRow.querySelector('img');
+    if (centerStarImg) {
+      centerStarImg.src = 'assets/gold_star.png';
+      centerStarImg.alt = 'Stars';
+    }
+
+    centerScore.append(
+      starsRow,
+      mk('span', 'war-events-hero-dest', `${myDest}% × ${oppDest}%`),
+      mk('span', 'war-events-hero-time')
     );
-    const timeLine = mk('span', 'war-events-hero-time');
-    timeLine.append(mk('i', 'ph-bold ph-clock'), document.createTextNode(timeRemainingText));
-    centerScore.append(starsLine, destLine, timeLine);
+    const heroTime = centerScore.querySelector('.war-events-hero-time');
+    heroTime.append(mk('i', 'ph-bold ph-clock'), document.createTextNode(timeRemainingText));
 
     const rightTeam = mk('div', 'war-events-hero-team');
     const rightImg = mk('img');
@@ -695,10 +1350,8 @@ export function populateAndShowWarEventsView(warData, day, currentTag, nextWarDa
     el.warEventsHeader.append(grid);
   }
 
-  // Lista de Ataques (já ordenada em ordem cronológica reversa por buildWarEvents)
   const warEvents = buildWarEvents(mySide, oppSide);
 
-  // Toggle de Filtro ("Todos", "[Clan A Name]", "[Clan B Name]")
   if (el.warEventsFilter) {
     el.warEventsFilter.replaceChildren();
     const filterOptions = [
@@ -731,9 +1384,6 @@ export function populateAndShowWarEventsView(warData, day, currentTag, nextWarDa
   showWarEventsView();
 }
 
-/**
- * Renderiza a Aba 2: Confrontos (7 Dias) com cards de alto nível e Lazy Loading ao clicar.
- */
 export function renderRounds(data, currentTag) {
   const box = el.roundsList;
   box.replaceChildren();
@@ -764,8 +1414,7 @@ export function renderRounds(data, currentTag) {
       leftImg.alt = '';
       const leftInfo = mk('div', 'round-team-info');
       leftInfo.append(
-        mk('span', 'round-team-name', myClanName),
-        mk('span', 'round-team-attacks', `Ataques: 0/${teamSize}`)
+        mk('span', 'round-team-name', myClanName)
       );
       leftTeam.append(leftImg, leftInfo);
 
@@ -778,8 +1427,7 @@ export function renderRounds(data, currentTag) {
       rightImg.alt = '';
       const rightInfo = mk('div', 'round-team-info');
       rightInfo.append(
-        mk('span', 'round-team-name', 'A definir'),
-        mk('span', 'round-team-attacks', `Ataques: 0/${teamSize}`)
+        mk('span', 'round-team-name', 'A definir')
       );
       rightTeam.append(rightImg, rightInfo);
 
@@ -792,9 +1440,6 @@ export function renderRounds(data, currentTag) {
 
     const myStars = Number(item.mySide.stars || 0);
     const oppStars = Number(item.oppSide.stars || 0);
-    const myAttacksCount = countSideAttacks(item.mySide);
-    const oppAttacksCount = countSideAttacks(item.oppSide);
-    const timeRemainingText = formatWarTimeRemaining(item.endTime, item.state);
 
     let cardMod = 'prep';
     let badgeText = 'Preparação';
@@ -847,8 +1492,7 @@ export function renderRounds(data, currentTag) {
     leftImg.alt = '';
     const leftInfo = mk('div', 'round-team-info');
     leftInfo.append(
-      mk('span', 'round-team-name', item.mySide.name),
-      mk('span', 'round-team-attacks', `Ataques: ${myAttacksCount}/${teamSize}`)
+      mk('span', 'round-team-name', item.mySide.name)
     );
     leftTeam.append(leftImg, leftInfo);
 
@@ -867,23 +1511,19 @@ export function renderRounds(data, currentTag) {
     rightImg.alt = '';
     const rightInfo = mk('div', 'round-team-info');
     rightInfo.append(
-      mk('span', 'round-team-name', item.oppSide.name),
-      mk('span', 'round-team-attacks', `Ataques: ${oppAttacksCount}/${teamSize}`)
+      mk('span', 'round-team-name', item.oppSide.name)
     );
     rightTeam.append(rightImg, rightInfo);
 
     mainRow.append(leftTeam, scoreBox, rightTeam);
 
     const metaRow = mk('div', 'round-matchup-meta');
-    const timeWrap = mk('span', 'round-time');
-    timeWrap.append(mk('i', 'ph-bold ph-clock'), document.createTextNode(timeRemainingText));
-
     const ctaEl = mk('span', 'round-events-cta');
     const ctaLabel = mk('span', '', 'Eventos');
     const ctaIcon = mk('i', 'ph-bold ph-arrow-right');
     ctaEl.append(ctaLabel, ctaIcon);
 
-    metaRow.append(timeWrap, ctaEl);
+    metaRow.append(ctaEl);
     matchup.append(mainRow, metaRow);
 
     const handleOpenWarEvents = async () => {
@@ -896,18 +1536,20 @@ export function renderRounds(data, currentTag) {
       ctaIcon.className = 'ph-bold ph-circle-notch spin';
 
       try {
-        // Lazy Loading: busca a guerra atual e, se for o clã #2GYGRQPG2, a guerra da próxima rodada para mapear substituições
         const nextRoundItem = myRoundsHistory.find(r => r.day === item.day + 1);
         const knownNextWarTag = nextRoundItem?.warTag || null;
 
-        const [warData, nextWarData] = await Promise.all([
+        const [warData, nextWarData, fullRoster] = await Promise.all([
           fetchWarData(warTag),
           isReportClanTag(currentTag)
             ? fetchNextRoundClanWar(currentTag, warTag, knownNextWarTag)
             : Promise.resolve(null),
+          isReportClanTag(currentTag)
+            ? fetchLeagueGroupClanRoster(currentTag)
+            : Promise.resolve([]),
         ]);
 
-        populateAndShowWarEventsView(warData, item.day, currentTag, nextWarData);
+        populateAndShowWarEventsView(warData, item.day, currentTag, nextWarData, fullRoster);
       } catch {
         ctaLabel.textContent = 'Erro ao carregar';
       } finally {
@@ -927,95 +1569,5 @@ export function renderRounds(data, currentTag) {
 
     card.append(head, matchup);
     box.append(card);
-  });
-}
-
-/**
- * Renderiza a Aba 3: Projeções Analíticas (Moneyball) e inicializa o Simulador.
- */
-export function renderProjections(data, currentTag) {
-  const metrics = calculateProjectionsMetrics(data, currentTag);
-
-  if (!metrics) {
-    el.projContent.hidden = true;
-    el.projNotice.hidden = false;
-    el.projNotice.textContent = 'Dados insuficientes no grupo para gerar projeções analíticas.';
-    return;
-  }
-
-  el.projNotice.hidden = true;
-  el.projContent.hidden = false;
-
-  el.promoBadge.textContent = metrics.promoBadgeText;
-  el.promoBadge.className = metrics.promoBadgeClass;
-  el.promoText.textContent = metrics.promoText;
-
-  el.survivalBadge.textContent = metrics.survivalBadgeText;
-  el.survivalBadge.className = metrics.survivalBadgeClass;
-  el.survivalText.textContent = metrics.survivalText;
-
-  el.h2hSubtitle.textContent = metrics.h2hSubtitle;
-  el.h2hBadge.textContent = metrics.h2hBadgeText;
-  el.h2hBadge.className = metrics.h2hBadgeClass;
-  el.h2hText.textContent = metrics.h2hText;
-
-  el.simSlider.value = String(metrics.initialSliderStars);
-  updateSimulationUI(data, currentTag, metrics.initialSliderStars);
-}
-
-/**
- * Atualiza a tabela e os indicadores visuais do Simulador de Desempenho (0 a 45 estrelas).
- */
-export function updateSimulationUI(leagueData, currentTag, simAttackStars) {
-  const scenario = calculateSimulationScenario(leagueData, currentTag, simAttackStars);
-  if (!scenario) return;
-
-  const myFullTag = '#' + currentTag;
-
-  el.simSliderValue.textContent = String(scenario.simStars);
-  el.simSlider.style.setProperty('--pct', scenario.pct);
-  el.simSubtitle.textContent = scenario.simSubtitle;
-  el.simResultBadge.textContent = scenario.resultBadgeText;
-  el.simResultBadge.className = scenario.resultBadgeClass;
-  el.simBonusInfo.className = scenario.bonusInfoClass;
-  el.simBonusInfo.textContent = scenario.bonusInfoText;
-
-  el.simLeaderboard.replaceChildren();
-  scenario.simStandings.forEach((item, idx) => {
-    const newPos = idx + 1;
-    const isMe = item.clan.tag === myFullTag;
-    const row = mk('div', 'row' + (isMe ? ' me' : ''));
-
-    row.append(mk('span', 'pos', newPos));
-    const status = idx < 2
-      ? ['up', 'ph-fill ph-caret-up']
-      : idx >= scenario.simStandings.length - 2
-        ? ['down', 'ph-fill ph-caret-down']
-        : ['mid', 'ph-bold ph-minus'];
-    row.append(mk('i', `st ${status[0]} ${status[1]}`));
-
-    row.append(createLocationFlagNode(item.location, true));
-
-    const img = mk('img', 'row-shield');
-    img.src = item.clan.badgeUrls?.small || DEFAULT_BADGE;
-    img.alt = '';
-    row.append(img, mk('div', 'nm', item.clan.name));
-
-    const delta = item.prevPos - newPos;
-    if (delta > 0) {
-      row.append(mk('span', 'sim-tag delta-up', `▲ +${delta}`));
-    } else if (delta < 0) {
-      row.append(mk('span', 'sim-tag delta-down', `▼ ${delta}`));
-    }
-
-    if (isMe && item.earnedBonus) {
-      row.append(mk('span', 'sim-tag bonus', '+10★'));
-    }
-
-    const st = mk('div', 'stars');
-    st.append(mk('i', 'ph-fill ph-star'), document.createTextNode(item.simStars));
-    row.append(st);
-
-    el.simLeaderboard.append(row);
   });
 }

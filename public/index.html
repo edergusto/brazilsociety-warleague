@@ -55,12 +55,12 @@
     <section id="searchView" class="view search">
       <div class="search-box">
         <h2>Encontre seu Clã</h2>
-        <p class="muted">Insira a tag do clã para ver a Liga de Guerras.</p>
+        <p class="muted">Busque por nome do clã ou por tag com # (ex: #2GYGRQPG2).</p>
         <form id="searchForm" class="card">
-          <label for="clanTag" class="label">Tag do Clã</label>
+          <label for="clanTag" class="label">Nome ou Tag do Clã</label>
           <div class="input-wrap">
-            <span class="hash">#</span>
-            <input id="clanTag" type="text" placeholder="2GYGRQPG2" autocomplete="off" autocapitalize="characters" spellcheck="false">
+            <i class="ph-bold ph-magnifying-glass search-input-icon"></i>
+            <input id="clanTag" type="text" placeholder="Nome ou #TAG" autocomplete="off" spellcheck="false">
           </div>
           <p id="errorMsg" class="error" hidden></p>
           <button type="submit" id="searchBtn" class="btn-gold">
@@ -69,22 +69,13 @@
           </button>
         </form>
 
-        <!-- CLÃS EM DESTAQUE (PROMOTED CLAN BANNERS) -->
-        <div class="featured-section" aria-label="Clãs em Destaque">
-          <div class="featured-header">
-            <span class="label">Clãs em Destaque</span>
-            <span class="featured-hint">Acesso Rápido</span>
+        <!-- DROPDOWN DINÂMICO DE RESULTADOS DA BUSCA -->
+        <div id="searchResultsDropdown" class="search-results-dropdown" hidden>
+          <div class="search-results-header">
+            <span class="label">Resultados da Busca</span>
+            <span id="searchResultsCount" class="results-count"></span>
           </div>
-          <div id="featuredClans" class="featured-grid"></div>
-        </div>
-
-        <!-- BUSCAS RECENTES (SEARCH HISTORY - Oculto quando vazio) -->
-        <div id="recentSearchesSection" class="recent-section" aria-label="Buscas Recentes" hidden>
-          <div class="recent-header">
-            <span class="label"><i class="ph-bold ph-clock-counter-clockwise"></i> Buscas Recentes</span>
-            <span class="recent-hint">Últimos 5</span>
-          </div>
-          <div id="recentSearchesList" class="recent-list"></div>
+          <div id="searchResultsList" class="search-results-list"></div>
         </div>
       </div>
     </section>
@@ -98,15 +89,17 @@
 
       <!-- COLUNA ESQUERDA NO DESKTOP / FLUXO NORMAL NO MOBILE -->
       <div class="dashboard-col-left">
-        <!-- CLAN BANNER COM LOCALIZAÇÃO, ÍCONE DA LIGA E MÉTRICAS DE ESTRELAS -->
+        <!-- CLAN BANNER COM LOCALIZAÇÃO, ÍCONE DA LIGA, FAVORITO E MÉTRICAS DE ESTRELAS -->
         <div class="banner">
+          <button type="button" id="favoriteBtn" class="banner-fav-btn" aria-label="Favoritar clã" title="Favoritar clã">
+            <i class="ph-bold ph-star fav-icon"></i>
+          </button>
           <div class="banner-top">
             <img id="clanBadge" src="./assets/cw_icon.png" alt="Escudo" class="badge">
             <div class="banner-info">
               <h3 id="clanName"></h3>
               <div class="banner-meta-row">
                 <div id="clanLocation" class="clan-location" hidden></div>
-                <p id="clanSize" class="muted"></p>
               </div>
               <div class="league-wrap">
                 <img id="clanLeagueIcon" src="" alt="League Icon" class="league-icon" hidden>
@@ -134,13 +127,13 @@
               <span class="stat-label">BÔNUS</span>
               <strong id="statStarsBonus" class="stat-value bonus">
                 <img src="assets/bonus_star.png" alt="Bonus" class="stat-icon">
-                <span>+0</span>
+                <span>0</span>
               </strong>
             </div>
           </div>
         </div>
 
-        <!-- NAVEGAÇÃO DE ABAS DO DASHBOARD (Apenas Mobile) -->
+        <!-- NAVEGAÇÃO DE ABAS DO DASHBOARD (Apenas Mobile: 3 Abas) -->
         <div class="tabs" role="tablist" aria-label="Visões da Liga">
           <button type="button" id="tabStandingsBtn" class="tab-btn active" role="tab" aria-selected="true" aria-controls="tabStandings">
             <i class="ph-fill ph-trophy"></i>
@@ -150,9 +143,9 @@
             <i class="ph-fill ph-sword"></i>
             <span>Confrontos</span>
           </button>
-          <button type="button" id="tabProjectionsBtn" class="tab-btn" role="tab" aria-selected="false" aria-controls="tabProjections">
-            <i class="ph-fill ph-chart-line-up"></i>
-            <span>Projeções</span>
+          <button type="button" id="tabRankingBtn" class="tab-btn" role="tab" aria-selected="false" aria-controls="tabRanking">
+            <i class="ph-fill ph-medal"></i>
+            <span>Ranking</span>
           </button>
         </div>
 
@@ -165,103 +158,16 @@
 
       <!-- COLUNA DIREITA NO DESKTOP / ABAS NO MOBILE -->
       <div class="dashboard-col-right">
-        <!-- ABA 3: PROJEÇÕES (MONEYBALL) -->
-        <div id="tabProjections" class="tab-panel" role="tabpanel" hidden>
-          <h4 class="label desk-section-title">Projeções Analíticas & Simulador</h4>
-          <div id="projectionsNotice" class="notice" hidden></div>
-
-          <div id="projectionsContent" class="proj-container">
-            <!-- 1. Meta de Promoção (Número Mágico) -->
-            <article class="proj-card promo">
-              <div class="proj-card-header">
-                <div class="proj-icon up"><i class="ph-fill ph-trend-up"></i></div>
-                <div class="proj-meta">
-                  <h4 class="proj-title">Meta de Promoção</h4>
-                  <span class="proj-subtitle">Número Mágico • Top 2 (15v15)</span>
-                </div>
-                <span id="promoBadge" class="proj-badge">Top 2</span>
-              </div>
-              <p id="promoText" class="proj-body"></p>
-            </article>
-
-            <!-- 2. Média de Sobrevivência (Risco de Rebaixamento) -->
-            <article class="proj-card survival">
-              <div class="proj-card-header">
-                <div class="proj-icon shield"><i class="ph-fill ph-shield-check"></i></div>
-                <div class="proj-meta">
-                  <h4 class="proj-title">Média de Sobrevivência</h4>
-                  <span class="proj-subtitle">Corte de Permanência • 6º Lugar+</span>
-                </div>
-                <span id="survivalBadge" class="proj-badge">Zona Segura</span>
-              </div>
-              <p id="survivalText" class="proj-body"></p>
-            </article>
-
-            <!-- 3. Cenário de Confronto Direto -->
-            <article class="proj-card h2h">
-              <div class="proj-card-header">
-                <div class="proj-icon sword"><i class="ph-fill ph-sword"></i></div>
-                <div class="proj-meta">
-                  <h4 class="proj-title">Cenário de Confronto Direto</h4>
-                  <span id="h2hSubtitle" class="proj-subtitle">Disputa Direta • Bônus +10★</span>
-                </div>
-                <span id="h2hBadge" class="proj-badge">Alvo</span>
-              </div>
-              <p id="h2hText" class="proj-body"></p>
-            </article>
-
-            <!-- 4. Simulador de Desempenho (Interativo) -->
-            <article class="proj-card simulator">
-              <div class="proj-card-header">
-                <div class="proj-icon sim"><i class="ph-fill ph-sliders-horizontal"></i></div>
-                <div class="proj-meta">
-                  <h4 class="proj-title">Simulador de Desempenho</h4>
-                  <span id="simSubtitle" class="proj-subtitle">Rodada Atual • Formato 15v15</span>
-                </div>
-                <span id="simResultBadge" class="proj-badge">Simulação</span>
-              </div>
-
-              <div class="sim-box">
-                <div class="sim-header-row">
-                  <span class="sim-label">Estrelas estimadas no ataque:</span>
-                  <div class="sim-value-wrap">
-                    <i class="ph-fill ph-star"></i>
-                    <span id="simSliderValue">30</span>
-                    <small>/ 45</small>
-                  </div>
-                </div>
-
-                <input
-                  id="simSlider"
-                  type="range"
-                  min="0"
-                  max="45"
-                  step="1"
-                  value="30"
-                  class="sim-range"
-                  aria-label="Estrelas estimadas na rodada atual"
-                >
-
-                <div class="sim-ticks">
-                  <span>0★</span>
-                  <span>15★</span>
-                  <span>30★</span>
-                  <span>45★</span>
-                </div>
-
-                <div id="simBonusInfo" class="sim-bonus-info"></div>
-              </div>
-
-              <h5 class="label sim-table-title">Classificação Simulada do Grupo</h5>
-              <div id="simLeaderboard" class="list"></div>
-            </article>
-          </div>
-        </div>
-
         <!-- ABA 2: CONFRONTOS (ROUNDS / HEAD-TO-HEAD HISTORY) -->
         <div id="tabRounds" class="tab-panel" role="tabpanel" hidden>
           <h4 class="label">Histórico de Confrontos</h4>
           <div id="roundsList" class="rounds-list"></div>
+        </div>
+
+        <!-- ABA 3: RANKING DE JOGADORES (RATING 0-2000) -->
+        <div id="tabRanking" class="tab-panel" role="tabpanel" hidden>
+          <h4 class="label">Ranking de Jogadores</h4>
+          <div id="rankingList" class="ranking-list"></div>
         </div>
       </div>
     </section>
@@ -275,7 +181,7 @@
 
         <!-- ABAS CONDICIONAIS (Visíveis apenas para o clã #2GYGRQPG2 / %232GYGRQPG2) -->
         <div id="war-events-mode-tabs" class="war-events-mode-tabs hidden" role="tablist" aria-label="Modo de visualização da guerra" hidden>
-          <button type="button" id="war-tab-events-btn" class="war-filter-btn active" role="tab" aria-selected="true">War Events</button>
+          <button type="button" id="war-tab-events-btn" class="war-filter-btn active" role="tab" aria-selected="true">Eventos</button>
           <button type="button" id="war-tab-report-btn" class="war-filter-btn" role="tab" aria-selected="false">Relatório</button>
         </div>
       </div>
@@ -312,13 +218,20 @@
 
   <nav class="nav">
     <button id="navSearch" aria-label="Buscar"><i class="ph ph-magnifying-glass"></i></button>
-    <button id="navCwl" class="cwl" aria-label="CWL" disabled><img src="./assets/cw_icon.png" alt="CWL"></button>
     <button id="navMenuBtn" aria-label="Menu"><i class="ph ph-list"></i></button>
   </nav>
 
   <div id="menu" class="menu" aria-hidden="true">
     <button id="closeMenuBtn" class="close" aria-label="Fechar"><i class="ph ph-x"></i></button>
     <div class="menu-items">
+      <!-- SEÇÃO FAVORITOS -->
+      <div class="menu-fav-section">
+        <div class="menu-fav-header">
+          <span class="label"><i class="ph-fill ph-star"></i> Favoritos</span>
+        </div>
+        <div id="menuFavoritesList" class="menu-fav-list"></div>
+      </div>
+
       <button type="button" id="clearCacheBtn">
         <i class="ph-bold ph-trash"></i>
         <span>Limpar Cache</span>
@@ -329,7 +242,7 @@
         Para mais informações, consulte a Política de Conteúdo para Fãs da Supercell: www.supercell.com/fan-content-policy
       </p>
     </div>
-    <span class="app-version">v1.0.5</span>
+    <span class="app-version">v1.1.0</span>
   </div>
 </div>
 <script src="https://unpkg.com/@phosphor-icons/web"></script>

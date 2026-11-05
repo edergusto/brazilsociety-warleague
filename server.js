@@ -47,6 +47,20 @@ function route(buildEndpoint) {
   };
 }
 
+app.get('/api/clans', async (req, res) => {
+  const name = String(req.query.name || '').trim();
+  if (!name || name.length < 3) {
+    return res.status(400).json({ reason: 'badName', message: 'O nome do clã deve ter pelo menos 3 caracteres.' });
+  }
+  try {
+    const encodedName = encodeURIComponent(name);
+    const { status, body } = await cocGet(`/clans?name=${encodedName}&limit=12`);
+    res.status(status).json(body);
+  } catch (e) {
+    res.status(502).json({ reason: 'proxy', message: 'Falha ao contatar a API.' });
+  }
+});
+
 app.get('/api/clan/:tag', route(t => `/clans/%23${t}`));
 app.get('/api/league/:tag', route(t => `/clans/%23${t}/currentwar/leaguegroup`));
 // Necessário para calcular estrelas e eventos de guerra: leaguegroup só traz as warTags

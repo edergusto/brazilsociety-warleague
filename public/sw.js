@@ -1,4 +1,4 @@
-const STATIC_CACHE = 'cwl-static-v10';
+const STATIC_CACHE = 'cwl-static-v14';
 const API_CACHE = 'cwl-api-v1';
 
 const STATIC_ASSETS = [
@@ -7,7 +7,6 @@ const STATIC_ASSETS = [
   './style.css',
   './app.js',
   './api.js',
-  './projections.js',
   './ui.js',
   './storage.js',
   './manifest.json',
@@ -21,6 +20,9 @@ const STATIC_ASSETS = [
   './assets/star_gold.png',
   './assets/star_red.png',
   './assets/bonus_star.png',
+  './assets/up.png',
+  './assets/down.png',
+  './assets/stay.png',
   './assets/fonts/Clash_Regular.otf.ttf',
   './assets/fonts/Clash_Bold.otf.ttf'
 ];
