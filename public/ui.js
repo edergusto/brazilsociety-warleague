@@ -456,12 +456,16 @@ export function switchWarEventsMode(mode = 'events') {
 }
 
 /**
- * Exporta o contêiner de Relatório (#war-report-list) como imagem PNG usando html2canvas,
- * preservando o tema Dark Gaming e baixando automaticamente `substitutions_round_[X].png`.
+ * Exporta o contêiner de Relatório (#war-report-list) como imagem PNG usando html2canvas:
+ * 1. Insere temporariamente o cabeçalho dinâmico `.export-header` ("Relatório - Rodada [X]").
+ * 2. Gera o canvas e remove imediatamente o `.export-header` do DOM.
+ * 3. Converte para Blob/File e utiliza Web Share API no iOS/PWA (`navigator.canShare` / `navigator.share`)
+ *    ou fallback de download via `URL.createObjectURL(blob)` no Desktop.
  */
 export async function exportReportToPng() {
   if (!el.warReportList || typeof window.html2canvas !== 'function') return;
 
+  const roundNumber = Number(activeReportRoundDay) || 1;
   const btn = el.exportReportBtn;
   const labelSpan = btn?.querySelector('span');
   const prevLabel = labelSpan ? labelSpan.textContent : 'Exportar';
@@ -469,7 +473,20 @@ export async function exportReportToPng() {
   if (btn) btn.disabled = true;
   if (labelSpan) labelSpan.textContent = 'Gerando…';
 
+  // 1. Dynamic Round Header (Export Prep)
+  const exportHeader = document.createElement('div');
+  exportHeader.className = 'export-header';
+  exportHeader.style.cssText =
+    "text-align: center; margin-bottom: 15px; padding: 14px 12px 10px; font-family: 'ClashBold', 'Supercell', sans-serif; color: #fff; border-bottom: 1px solid rgba(255, 255, 255, 0.08);";
+  const headerTitle = document.createElement('h2');
+  headerTitle.textContent = `Relatório - Rodada ${roundNumber}`;
+  headerTitle.style.cssText = 'font-size: 1.05rem; letter-spacing: 0.03em; color: #fbbf24; margin: 0;';
+  exportHeader.appendChild(headerTitle);
+
+  el.warReportList.prepend(exportHeader);
+
   try {
+    // 2. Canvas Generation & Immediate DOM Cleanup
     const canvas = await window.html2canvas(el.warReportList, {
       backgroundColor: '#100920',
       scale: 2,
@@ -477,16 +494,36 @@ export async function exportReportToPng() {
       logging: false,
     });
 
-    const dataUrl = canvas.toDataURL('image/png');
-    const link = document.createElement('a');
-    link.download = `substitutions_round_${activeReportRoundDay}.png`;
-    link.href = dataUrl;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+    exportHeader.remove();
+
+    // 3. iOS PWA Web Share API Logic + Desktop Fallback
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+    if (!blob) return;
+
+    const fileName = `substituicoes_rodada_${roundNumber}.png`;
+    const file = new File([blob], fileName, { type: 'image/png' });
+
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({
+        files: [file],
+        title: `Relatório CWL - Rodada ${roundNumber}`,
+      });
+    } else {
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    }
   } catch {
-    // Ignora falha silenciosamente e restaura o botão
+    // Ignora cancelamento do share sheet ou falha silenciosamente
   } finally {
+    if (exportHeader.parentNode) {
+      exportHeader.remove();
+    }
     if (btn) btn.disabled = false;
     if (labelSpan) labelSpan.textContent = prevLabel;
   }
