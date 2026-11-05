@@ -1,4 +1,4 @@
-const STATIC_CACHE = 'cwl-static-v9';
+const STATIC_CACHE = 'cwl-static-v10';
 const API_CACHE = 'cwl-api-v1';
 
 const STATIC_ASSETS = [

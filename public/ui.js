@@ -496,14 +496,18 @@ export async function exportReportToPng() {
 
     exportHeader.remove();
 
-    // 3. iOS PWA Web Share API Logic + Desktop Fallback
+    // 3. Device-Aware Image Export: Web Share API APENAS no Mobile PWA instalado; download direto nos demais casos
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    const isMobilePWA = isStandalone && isMobile;
+
     const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
     if (!blob) return;
 
     const fileName = `substituicoes_rodada_${roundNumber}.png`;
     const file = new File([blob], fileName, { type: 'image/png' });
 
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    if (isMobilePWA && navigator.canShare && navigator.canShare({ files: [file] })) {
       await navigator.share({
         files: [file],
         title: `Relatório CWL - Rodada ${roundNumber}`,
