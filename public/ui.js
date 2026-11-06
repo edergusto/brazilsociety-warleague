@@ -767,13 +767,9 @@ export function renderMenuFavorites(onSelectClan) {
     img.src = fav.badgeUrl || DEFAULT_BADGE;
     img.alt = '';
 
-    const info = mk('div', 'menu-fav-info');
-    info.append(
-      mk('span', 'menu-fav-name', fav.name),
-      mk('span', 'menu-fav-tag', `#${cleanTag(fav.tag)}`)
-    );
+    const name = mk('span', 'menu-fav-name', fav.name);
 
-    item.append(img, info, mk('i', 'ph-bold ph-caret-right menu-fav-arrow'));
+    item.append(img, name);
     item.addEventListener('click', () => {
       setMobileMenu(false);
       if (typeof onSelectClan === 'function') onSelectClan(fav.tag);
@@ -1535,7 +1531,7 @@ export function renderRounds(data, currentTag) {
       const card = mk('div', 'round-card unscheduled');
       const head = mk('div', 'round-head');
       head.append(
-        mk('span', 'round-day', `Dia ${item.day}`),
+        mk('span', 'round-day', `Rodada ${item.day}`),
         mk('span', 'round-status', 'Aguardando Sorteio')
       );
 
@@ -1587,7 +1583,7 @@ export function renderRounds(data, currentTag) {
       const winner = resolveWarWinner(item.mySide, item.oppSide);
       if (winner === myFullTag) {
         cardMod = 'win';
-        badgeText = 'Vitória (+10★)';
+        badgeText = 'Vitória';
         badgeMod = 'win';
       } else if (winner === item.oppSide.tag) {
         cardMod = 'loss';
@@ -1609,7 +1605,7 @@ export function renderRounds(data, currentTag) {
 
     const head = mk('div', 'round-head');
     head.append(
-      mk('span', 'round-day', `Dia ${item.day}`),
+      mk('span', 'round-day', `Rodada ${item.day}`),
       mk('span', `round-status ${badgeMod}`.trim(), badgeText)
     );
 
@@ -1653,9 +1649,8 @@ export function renderRounds(data, currentTag) {
 
     const metaRow = mk('div', 'round-matchup-meta');
     const ctaEl = mk('span', 'round-events-cta');
-    const ctaLabel = mk('span', '', 'Eventos');
-    const ctaIcon = mk('i', 'ph-bold ph-arrow-right');
-    ctaEl.append(ctaLabel, ctaIcon);
+    const ctaLabel = mk('span', '', 'Ver Eventos');
+    ctaEl.append(ctaLabel);
 
     metaRow.append(ctaEl);
     matchup.append(mainRow, metaRow);
@@ -1667,7 +1662,6 @@ export function renderRounds(data, currentTag) {
       card.classList.add('loading');
       const prevText = ctaLabel.textContent;
       ctaLabel.textContent = 'Carregando…';
-      ctaIcon.className = 'ph-bold ph-circle-notch spin';
 
       try {
         const nextRoundItem = myRoundsHistory.find(r => r.day === item.day + 1);

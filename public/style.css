@@ -96,11 +96,12 @@ button {
 }
 
 /* ==========================================================================
-   HEADER & TOP-LEFT HAMBURGER MENU
+   HEADER & TOP-RIGHT HAMBURGER MENU
    ========================================================================== */
 .header {
   flex-shrink: 0;
   display: flex;
+  justify-content: space-between;
   align-items: center;
   gap: 0.75rem;
   padding: calc(env(safe-area-inset-top) + 0.85rem) 1.25rem 0.85rem;
@@ -109,28 +110,28 @@ button {
   z-index: 25;
 }
 
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
 .header-menu-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 38px;
   height: 38px;
+  margin-left: auto;
   border-radius: 6px;
   color: var(--text-primary);
-  font-size: 1.4rem;
+  font-size: 1.5rem;
   flex-shrink: 0;
   transition: background 0.15s ease, color 0.15s ease;
 }
 
 .header-menu-btn:hover {
   background: var(--surface-hover);
-}
-
-.header-brand {
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-  flex: 1;
 }
 
 .logo {
@@ -737,6 +738,7 @@ button {
 
 .tab-panel {
   display: flex;
+  gap: 0.5rem;
   flex-direction: column;
 }
 
@@ -789,16 +791,16 @@ button {
 }
 
 .trend-icon {
-  width: 16px;
-  height: 16px;
+  width: 9px;
+  height: 9px;
   object-fit: contain;
   flex-shrink: 0;
   display: inline-block;
 }
 
 .trend-icon.report-trend {
-  width: 14px;
-  height: 14px;
+  width: 9px;
+  height: 9px;
   margin-left: 0.25rem;
 }
 
@@ -834,8 +836,8 @@ button {
 
 .row .nm {
   flex: 1;
-  font-family: var(--font-clash-bold);
-  font-weight: 700;
+  /* font-family: var(--font-clash-bold);
+  font-weight: 700; */
   font-size: 0.9rem;
   min-width: 0;
   overflow: hidden;
@@ -880,7 +882,7 @@ button {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  padding: 0.85rem 1rem;
+  padding: 0.85rem 0.85rem;
   background: var(--surface);
   border: 1px solid var(--line);
   border-left: 3px solid transparent;
@@ -910,9 +912,9 @@ button {
   pointer-events: none;
 }
 
-.round-card.win { border-left-color: var(--green); }
-.round-card.loss { border-left-color: var(--red); }
-.round-card.live { border-left-color: var(--gold); }
+.round-card.win { border-left-color: #555555; }
+.round-card.loss { border-left-color: #555555; }
+.round-card.live { border-left-color: #555555; }
 .round-card.prep { border-left-color: #555555; }
 
 .round-head {
@@ -1009,9 +1011,9 @@ button {
 }
 
 .round-team-name {
-  font-family: var(--font-clash-bold);
+  /* font-family: var(--font-clash-bold);
+  font-weight: 700; */
   font-size: 0.82rem;
-  font-weight: 700;
   color: var(--text-primary);
   overflow-wrap: break-word;
   word-break: break-word;
@@ -1055,10 +1057,10 @@ button {
 
 .round-matchup-meta {
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
   align-items: center;
   gap: 0.5rem;
-  padding-top: 0.4rem;
+  padding-top: 0.7rem;
   border-top: 1px solid var(--line-subtle);
   font-family: var(--font-sans);
 }
@@ -1511,7 +1513,7 @@ button {
 }
 
 .war-report-name {
-  font-family: var(--font-clash-bold);
+  /* font-family: var(--font-clash-bold); */
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1627,8 +1629,8 @@ button {
 }
 
 .ranking-name {
-  font-family: var(--font-clash-bold);
-  font-weight: 700;
+  /* font-family: var(--font-clash-bold);
+  font-weight: 700; */
   font-size: 0.9rem;
   color: var(--text-primary);
   overflow: hidden;
@@ -1731,20 +1733,20 @@ button {
 }
 
 /* ==========================================================================
-   HAMBURGER MENU & ACCORDION FAVORITOS (STRICTLY ARIAL TYPOGRAPHY)
+   SUPERCELL-STYLE HAMBURGER MENU (SOLID BLACK & STRICTLY ARIAL TYPOGRAPHY)
    ========================================================================== */
 .menu {
   position: fixed;
   inset: 0;
   z-index: 50;
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  justify-content: flex-start;
   align-items: center;
-  background: rgba(0, 0, 0, 0.94);
-  backdrop-filter: blur(12px);
+  background: #000000;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.25s ease;
+  transition: opacity 0.2s ease;
 }
 
 .menu.open {
@@ -1760,91 +1762,79 @@ button {
 
 .close {
   position: absolute;
-  top: calc(env(safe-area-inset-top) + 1.25rem);
+  top: calc(env(safe-area-inset-top) + 0.85rem);
   right: 1.25rem;
+  width: 38px;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-size: 1.75rem;
-  color: var(--text-muted);
-  transition: color 0.15s ease;
+  color: #ffffff;
+  transition: opacity 0.15s ease;
 }
 
 .close:hover {
-  color: var(--text-primary);
+  opacity: 0.75;
 }
 
 .menu-items {
   width: 100%;
-  max-width: 380px;
-  padding: 0 1.5rem;
+  max-width: 400px;
+  padding: calc(env(safe-area-inset-top) + 4.75rem) 2rem 2rem;
   display: flex;
   flex-direction: column;
-  gap: 1.1rem;
-  text-align: center;
-  transform: translateY(10px);
-  transition: transform 0.25s ease;
+  align-items: flex-start;
+  gap: 0;
+  text-align: left;
+  transform: translateY(8px);
+  transition: transform 0.2s ease;
 }
 
 .menu.open .menu-items {
   transform: none;
 }
 
-/* Accordion de Favoritos */
-.menu-fav-section {
-  display: flex;
-  flex-direction: column;
-  text-align: left;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.menu-fav-toggle {
+.menu-link {
   display: flex;
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  padding: 0.9rem 1rem;
+  padding: 1.1rem 0;
   background: none;
   border: none;
-  color: var(--text-primary);
-  font-size: 0.95rem;
-  font-weight: 700;
-  cursor: pointer;
-  transition: background 0.15s ease;
-}
-
-.menu-fav-toggle:hover {
-  background: var(--surface-subtle);
-}
-
-.fav-toggle-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.55rem;
-}
-
-.fav-toggle-label i {
-  color: var(--gold);
+  border-bottom: 1px solid #1a1a1a;
+  color: #ffffff;
   font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  text-align: left;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.menu-link:hover {
+  opacity: 0.8;
 }
 
 .fav-chevron {
-  font-size: 1rem;
-  color: var(--text-muted);
-  transition: transform 0.25s ease, color 0.15s ease;
+  font-size: 1.15rem;
+  color: #ffffff;
+  transition: transform 0.2s ease;
 }
 
 .menu-fav-toggle.expanded .fav-chevron {
-  transform: rotate(180deg);
-  color: var(--text-primary);
+  transform: rotate(90deg);
 }
 
 .menu-fav-list {
   display: flex;
   flex-direction: column;
-  gap: 0;
-  border-top: 1px solid var(--line-subtle);
-  max-height: 240px;
+  width: 100%;
+  gap: 0.25rem;
+  padding: 0.5rem 0 0.75rem 0.5rem;
+  border-bottom: 1px solid #1a1a1a;
+  max-height: 260px;
   overflow-y: auto;
 }
 
@@ -1852,21 +1842,17 @@ button {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.65rem 1rem;
+  padding: 0.55rem 0.5rem;
   background: none;
   border: none;
-  border-bottom: 1px solid var(--line-subtle);
+  border-radius: 6px;
   transition: background 0.15s ease;
   text-align: left;
   width: 100%;
 }
 
-.menu-fav-item:last-child {
-  border-bottom: none;
-}
-
 .menu-fav-item:hover {
-  background: var(--surface-subtle);
+  background: #141414;
 }
 
 .menu-fav-badge {
@@ -1876,75 +1862,31 @@ button {
   flex-shrink: 0;
 }
 
-.menu-fav-info {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.4rem;
-}
-
 .menu-fav-name {
-  font-size: 0.88rem;
-  font-weight: 700;
-  color: var(--text-primary);
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #ffffff;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.menu-fav-tag {
-  font-size: 0.74rem;
-  font-weight: 600;
-  color: var(--text-muted);
-}
-
-.menu-fav-arrow {
-  color: var(--text-muted);
-  font-size: 0.9rem;
-}
-
 .menu-fav-empty {
-  padding: 1.25rem 1rem;
-  text-align: center;
-  font-size: 0.8rem;
+  padding: 0.75rem 0.5rem;
+  text-align: left;
+  font-size: 0.9rem;
   color: var(--text-muted);
   line-height: 1.4;
 }
 
-.menu-items > button:not(.menu-fav-toggle) {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.55rem;
-  font-size: 0.95rem;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  padding: 0.85rem 0;
-  border-bottom: 1px solid var(--line);
-  color: var(--text-secondary);
-  transition: color 0.15s ease;
-  text-transform: uppercase;
-}
-
-.menu-items > button:not(.menu-fav-toggle) i {
-  color: var(--text-muted);
-  font-size: 1.15rem;
-}
-
-.menu-items > button:not(.menu-fav-toggle):hover {
-  color: var(--text-primary);
-}
-
-.menu-items > button:not(.menu-fav-toggle):hover i {
-  color: var(--gold);
-}
-
 .policy {
+  width: 100%;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid #1a1a1a;
   line-height: 1.5;
-  font-size: 0.82rem;
-  color: var(--text-muted);
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  text-align: left;
 }
 
 .app-version {
