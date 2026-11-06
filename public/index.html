@@ -6,7 +6,7 @@
   <title>CWL Manager</title>
 
   <!-- PWA Meta & Links -->
-  <meta name="theme-color" content="#0b0618">
+  <meta name="theme-color" content="#000000">
   <meta name="description" content="Acompanhamento tático e projeções analíticas da Liga de Guerras de Clãs (CWL).">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -23,6 +23,9 @@
 <body>
 <div class="app">
   <header class="header">
+    <button type="button" id="headerMenuBtn" class="header-menu-btn" aria-label="Abrir Menu">
+      <i class="ph ph-list"></i>
+    </button>
     <div class="header-brand">
       <img src="./assets/logo.png" alt="Logo" class="logo">
       <h1 class="brand">Brazil Society</h1>
@@ -98,17 +101,37 @@
             <img id="clanBadge" src="./assets/cw_icon.png" alt="Escudo" class="badge">
             <div class="banner-info">
               <h3 id="clanName"></h3>
-              <div class="banner-meta-row">
-                <div id="clanLocation" class="clan-location" hidden></div>
-              </div>
               <div class="league-wrap">
                 <img id="clanLeagueIcon" src="" alt="League Icon" class="league-icon" hidden>
-                <span id="clanLeague" class="pill"></span>
+                <span id="clanLeague" class="clan-league"></span>
               </div>
+              <div id="clanRating" class="clan-rating">Rating: —</div>
+              <div id="clanLocation" class="clan-location" hidden></div>
             </div>
           </div>
 
-          <div class="banner-stats" aria-label="Resumo de Estrelas do Clã">
+          <div class="banner-stats" aria-label="Estatísticas do Clã na CWL">
+            <!-- Linha 1: Vitórias, Derrotas, Empates -->
+            <div class="stat-item">
+              <span class="stat-label">VITÓRIAS</span>
+              <strong id="statWarsWon" class="stat-value win">
+                <span>0</span>
+              </strong>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">DERROTAS</span>
+              <strong id="statWarsLost" class="stat-value loss">
+                <span>0</span>
+              </strong>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">EMPATES</span>
+              <strong id="statWarsTied" class="stat-value tie">
+                <span>0</span>
+              </strong>
+            </div>
+
+            <!-- Linha 2: Ganhas, Perdidas, Bônus -->
             <div class="stat-item">
               <span class="stat-label">GANHAS</span>
               <strong id="statStarsGained" class="stat-value gained">
@@ -218,18 +241,21 @@
 
   <nav class="nav">
     <button id="navSearch" aria-label="Buscar"><i class="ph ph-magnifying-glass"></i></button>
-    <button id="navMenuBtn" aria-label="Menu"><i class="ph ph-list"></i></button>
   </nav>
 
   <div id="menu" class="menu" aria-hidden="true">
     <button id="closeMenuBtn" class="close" aria-label="Fechar"><i class="ph ph-x"></i></button>
     <div class="menu-items">
-      <!-- SEÇÃO FAVORITOS -->
+      <!-- SEÇÃO FAVORITOS (ACCORDION) -->
       <div class="menu-fav-section">
-        <div class="menu-fav-header">
-          <span class="label"><i class="ph-fill ph-star"></i> Favoritos</span>
-        </div>
-        <div id="menuFavoritesList" class="menu-fav-list"></div>
+        <button type="button" id="favAccordionBtn" class="menu-fav-toggle" aria-expanded="false">
+          <span class="fav-toggle-label">
+            <i class="ph-fill ph-star"></i>
+            <span>Favoritos</span>
+          </span>
+          <i class="ph-bold ph-caret-down fav-chevron"></i>
+        </button>
+        <div id="menuFavoritesList" class="menu-fav-list" hidden></div>
       </div>
 
       <button type="button" id="clearCacheBtn">

@@ -347,3 +347,16 @@ export function calculatePlayerRatings(clanRoster = [], myRoundsHistory = []) {
     rank: idx + 1,
   }));
 }
+
+/**
+ * Calcula o Rating médio geral do clã na CWL (escala de 0 a 2000 pontos)
+ * baseado na pontuação de desempenho do elenco (média dos 15 melhores pontuadores/titulares).
+ */
+export function calculateClanRating(playerRankings = []) {
+  if (!Array.isArray(playerRankings) || playerRankings.length === 0) return 0;
+  const rated = playerRankings.filter(p => (Number(p.rating) || 0) > 0);
+  if (rated.length === 0) return 0;
+  const topTeam = rated.slice(0, 15);
+  const sum = topTeam.reduce((acc, p) => acc + Number(p.rating), 0);
+  return Math.round(sum / topTeam.length);
+}

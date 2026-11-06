@@ -8,7 +8,10 @@ import {
   seasonLabel,
   loadStandings,
   updateBannerLocationAndLeague,
+  renderBannerInfo,
+  updateBannerRating,
   updateBannerStats,
+  calculateClanWarRecord,
   updateFavoriteButton,
   renderSearchResults,
   showError,
@@ -21,6 +24,7 @@ import {
   switchWarEventsMode,
   exportReportToPng,
   setMobileMenu,
+  toggleFavoritesAccordion,
   clearAppCache,
   closeDesktopPopovers,
   renderLeaderboard,
@@ -66,6 +70,8 @@ async function searchByTag(rawTag) {
     $('clanBadge').src = badgeSrc;
     $('clanLeague').textContent = clan.warLeague?.name || 'Sem liga';
     updateBannerLocationAndLeague(clan);
+    updateBannerRating(clan.rating || null);
+    renderBannerInfo(clan, clan.rating || null);
     updateFavoriteButton(tag);
 
     $('leaderboard').replaceChildren();
@@ -74,8 +80,12 @@ async function searchByTag(rawTag) {
     $('seasonTitle').textContent = '';
     $('roundInfo').textContent = '';
 
-    updateBannerStats(0, 0, 0);
+    updateBannerStats(0, 0, 0, 0, 0, 0);
     showDashboardView();
+
+    const mainEl = $('main');
+    if (mainEl) mainEl.scrollTop = 0;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
 
     try {
       const group = await fetchLeagueGroup(tag);
@@ -88,11 +98,21 @@ async function searchByTag(rawTag) {
       $('roundInfo').textContent = `Partida atual: ${leagueData.round}/${leagueData.totalRounds}`;
 
       const myStats = leagueData.statsByTag['#' + tag];
+      const record = calculateClanWarRecord(leagueData.myRoundsHistory, tag);
+      const wins = myStats?.wins ?? record.wins;
+      const losses = myStats?.losses ?? record.losses;
+      const ties = myStats?.ties ?? record.ties;
+
       if (myStats) {
-        updateBannerStats(myStats.stars, myStats.missedStars, myStats.bonusStars);
+        updateBannerStats(myStats.stars, myStats.missedStars, myStats.bonusStars, wins, losses, ties);
+      } else {
+        updateBannerStats(0, 0, 0, wins, losses, ties);
       }
 
-      renderLeaderboard(leagueData.standings, currentTag);
+      updateBannerRating(leagueData.clanRating);
+      renderBannerInfo(clan, leagueData.clanRating);
+
+      renderLeaderboard(leagueData.standings, currentTag, searchByTag);
       renderRounds(leagueData, currentTag);
       renderRanking(leagueData);
     } catch (e) {
@@ -214,8 +234,20 @@ function bindEvents() {
     });
   }
 
-  $('navMenuBtn').addEventListener('click', () => setMobileMenu(true, searchByTag));
-  $('closeMenuBtn').addEventListener('click', () => setMobileMenu(false));
+  const headerMenuBtn = el.headerMenuBtn || $('headerMenuBtn') || $('navMenuBtn');
+  if (headerMenuBtn) {
+    headerMenuBtn.addEventListener('click', () => setMobileMenu(true, searchByTag));
+  }
+
+  const favAccordionBtn = el.favAccordionBtn || $('favAccordionBtn');
+  if (favAccordionBtn) {
+    favAccordionBtn.addEventListener('click', () => toggleFavoritesAccordion());
+  }
+
+  const closeMenuBtn = $('closeMenuBtn');
+  if (closeMenuBtn) {
+    closeMenuBtn.addEventListener('click', () => setMobileMenu(false));
+  }
   if (el.clearCacheBtn) {
     el.clearCacheBtn.addEventListener('click', clearAppCache);
   }

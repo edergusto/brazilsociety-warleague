@@ -14,6 +14,7 @@ import {
   fetchGroupDetailsAndWars,
   fetchLeagueGroupClanRoster,
   calculatePlayerRatings,
+  calculateClanRating,
 } from './api.js';
 import {
   getFavorites,
@@ -380,6 +381,34 @@ export function buildClanPerformanceReport(
   };
 }
 
+/**
+ * Calcula o histórico de guerras concluídas (Vitórias, Derrotas, Empates) na CWL
+ * para o clã ativo iterando pelas rodadas.
+ */
+export function calculateClanWarRecord(myRoundsHistory = [], clanTag = '') {
+  const normalizedTag = cleanTag(clanTag);
+  let wins = 0;
+  let losses = 0;
+  let ties = 0;
+
+  (Array.isArray(myRoundsHistory) ? myRoundsHistory : []).forEach(round => {
+    if (round.state !== 'warEnded' || !round.mySide || !round.oppSide) return;
+    const winnerTag = resolveWarWinner(round.mySide, round.oppSide);
+    const myTag = round.mySide.tag;
+    const oppTag = round.oppSide.tag;
+
+    if (winnerTag && cleanTag(winnerTag) === cleanTag(myTag)) {
+      wins += 1;
+    } else if (winnerTag && cleanTag(winnerTag) === cleanTag(oppTag)) {
+      losses += 1;
+    } else {
+      ties += 1;
+    }
+  });
+
+  return { wins, losses, ties };
+}
+
 export async function loadStandings(group, currentTag) {
   const myFullTag = '#' + currentTag;
   const totalRounds = Array.isArray(group.rounds) && group.rounds.length ? group.rounds.length : 7;
@@ -397,6 +426,8 @@ export async function loadStandings(group, currentTag) {
       warsPlayed: 0,
       completedWars: 0,
       wins: 0,
+      losses: 0,
+      ties: 0,
     };
   });
 
@@ -482,7 +513,13 @@ export async function loadStandings(group, currentTag) {
         s.warsPlayed += 1;
         if (w.state === 'warEnded') {
           s.completedWars += 1;
-          if (wonBonus > 0) s.wins += 1;
+          if (winnerTag === side.tag) {
+            s.wins += 1;
+          } else if (winnerTag === null) {
+            s.ties += 1;
+          } else {
+            s.losses += 1;
+          }
         }
       });
     }
@@ -499,6 +536,7 @@ export async function loadStandings(group, currentTag) {
   );
   const clanRoster = Array.isArray(myClanObj?.members) ? myClanObj.members : [];
   const playerRankings = calculatePlayerRatings(clanRoster, myRoundsHistory);
+  const clanRating = calculateClanRating(playerRankings);
 
   const standings = Object.values(stats).sort((a, b) => b.stars - a.stars || b.destruction - a.destruction);
   const leagueData = {
@@ -511,6 +549,7 @@ export async function loadStandings(group, currentTag) {
     myRoundsHistory,
     clanRoster,
     playerRankings,
+    clanRating,
   };
   lastLoadedLeagueData = leagueData;
   return leagueData;
@@ -530,6 +569,8 @@ export const el = {
   search: $('searchView'),
   dash: $('dashboardView'),
   favoriteBtn: $('favoriteBtn'),
+  headerMenuBtn: $('headerMenuBtn'),
+  favAccordionBtn: $('favAccordionBtn'),
   menuFavoritesList: $('menuFavoritesList'),
   warEventsView: $('war-events-view'),
   backToRoundsBtn: $('back-to-rounds'),
@@ -550,7 +591,12 @@ export const el = {
   deskPolicyBtn: $('deskPolicyBtn'),
   deskPolicyPopover: $('deskPolicyPopover'),
   clanLoc: $('clanLocation'),
+  clanLeague: $('clanLeague'),
   clanLeagueIcon: $('clanLeagueIcon'),
+  clanRating: $('clanRating'),
+  statWarsWon: $('statWarsWon'),
+  statWarsLost: $('statWarsLost'),
+  statWarsTied: $('statWarsTied'),
   statGained: $('statStarsGained'),
   statLost: $('statStarsLost'),
   statBonus: $('statStarsBonus'),
@@ -564,7 +610,8 @@ export const el = {
   rankingList: $('rankingList'),
 };
 
-export const WORLD_ICON_PATH = './assets/world_icon.png';
+export const DEFAULT_UNRANKED_LEAGUE_ICON = './assets/leagues/29000000.png';
+export const INTERNATIONAL_FLAG_PATH = './assets/flags/international.svg';
 export const UP_IMG_PATH = './assets/up.png';
 export const DOWN_IMG_PATH = './assets/down.png';
 export const STAY_IMG_PATH = './assets/stay.png';
@@ -580,31 +627,67 @@ export const mk = (tag, cls, text) => {
 export function getLeagueIconPath(warLeague) {
   const id = warLeague?.id;
   if (!id) return null;
-  const extractedDigits = String(id).slice(-2);
-  return `./assets/${extractedDigits}.png`;
+  const lastTwoDigits = String(id).slice(-2).padStart(2, '0');
+  return `./assets/leagues/290000${lastTwoDigits}.png`;
 }
 
 export function createLocationFlagNode(location, forLeaderboard = false) {
-  if (location?.isCountry && location?.countryCode) {
-    const code = String(location.countryCode).toLowerCase();
-    const flagImg = mk('img', forLeaderboard ? 'row-flag' : 'loc-flag');
-    flagImg.src = `https://flagcdn.com/w20/${code}.png`;
-    flagImg.alt = location.name || code.toUpperCase();
-    flagImg.title = location.name || code.toUpperCase();
+  const flagImg = mk('img', forLeaderboard ? 'row-flag' : 'loc-flag');
+  const locName = location?.name || 'International';
+
+  if (location && location.isCountry !== false && location.countryCode) {
+    const code = String(location.countryCode).trim().toLowerCase();
+    flagImg.src = `./assets/flags/${code}.svg`;
+    flagImg.alt = locName;
+    flagImg.title = locName;
+    flagImg.addEventListener('error', () => {
+      flagImg.src = INTERNATIONAL_FLAG_PATH;
+    }, { once: true });
     return flagImg;
   }
 
-  const worldImg = mk('img', forLeaderboard ? 'row-world-img' : 'loc-world');
-  worldImg.src = WORLD_ICON_PATH;
-  worldImg.alt = location?.name || 'International';
-  worldImg.title = location?.name || 'International';
-  worldImg.addEventListener('error', () => {
-    const globeIcon = mk('i', (forLeaderboard ? 'row-world-icon' : 'loc-world') + ' ph-bold ph-globe');
-    globeIcon.title = location?.name || 'International';
-    globeIcon.setAttribute('aria-label', location?.name || 'International');
-    worldImg.replaceWith(globeIcon);
-  }, { once: true });
-  return worldImg;
+  flagImg.src = INTERNATIONAL_FLAG_PATH;
+  flagImg.alt = locName;
+  flagImg.title = locName;
+  return flagImg;
+}
+
+export function updateBannerRating(rating) {
+  if (el.clanRating) {
+    if (rating != null && rating !== '' && Number(rating) > 0) {
+      el.clanRating.textContent = `Rating: ${rating}`;
+      el.clanRating.hidden = false;
+    } else {
+      el.clanRating.textContent = 'Rating: —';
+      el.clanRating.hidden = false;
+    }
+  }
+}
+
+/**
+ * Reordena os elementos informativos do Banner estritamente de cima para baixo:
+ * 1. Clan Name
+ * 2. League Name (League Icon + Text)
+ * 3. Rating (Renderizado puramente como texto, e.g. "Rating: 1788", sem ícones)
+ * 4. Location (Bandeira + Nome do País)
+ */
+export function renderBannerInfo(clan, rating = null) {
+  const bannerInfo = document.querySelector('.banner-info');
+  if (!bannerInfo) return;
+
+  const clanName = $('clanName');
+  const leagueWrap = document.querySelector('.league-wrap');
+  const clanRating = $('clanRating');
+  const clanLoc = $('clanLocation');
+
+  if (clanName) bannerInfo.appendChild(clanName);
+  if (leagueWrap) bannerInfo.appendChild(leagueWrap);
+  if (clanRating) bannerInfo.appendChild(clanRating);
+  if (clanLoc) bannerInfo.appendChild(clanLoc);
+
+  if (rating !== undefined && rating !== null) {
+    updateBannerRating(rating);
+  }
 }
 
 export function updateBannerLocationAndLeague(clan) {
@@ -626,20 +709,30 @@ export function updateBannerLocationAndLeague(clan) {
       el.clanLeagueIcon.src = iconPath;
       el.clanLeagueIcon.alt = clan.warLeague?.name || 'League Icon';
       el.clanLeagueIcon.hidden = false;
-      el.clanLeagueIcon.onerror = () => { el.clanLeagueIcon.hidden = true; };
+      el.clanLeagueIcon.onerror = () => {
+        el.clanLeagueIcon.onerror = () => { el.clanLeagueIcon.hidden = true; };
+        el.clanLeagueIcon.src = DEFAULT_UNRANKED_LEAGUE_ICON;
+      };
     } else {
       el.clanLeagueIcon.hidden = true;
     }
   }
+
+  renderBannerInfo(clan);
 }
 
 /**
- * Renderiza estritamente os números absolutos de estrelas ganhas, perdidas e bônus (sem prefixo "-" ou "+").
+ * Renderiza os números absolutos das estatísticas do clã no grid 2x3:
+ * Linha 1: Vitórias | Derrotas | Empates
+ * Linha 2: Ganhas | Perdidas | Bônus
  */
-export function updateBannerStats(gained = 0, lost = 0, bonus = 0) {
-  el.statGained.querySelector('span').textContent = String(Math.abs(gained));
-  el.statLost.querySelector('span').textContent = String(Math.abs(lost));
-  el.statBonus.querySelector('span').textContent = String(Math.abs(bonus));
+export function updateBannerStats(gained = 0, lost = 0, bonus = 0, wins = 0, losses = 0, ties = 0) {
+  if (el.statWarsWon) el.statWarsWon.querySelector('span').textContent = String(Math.abs(wins));
+  if (el.statWarsLost) el.statWarsLost.querySelector('span').textContent = String(Math.abs(losses));
+  if (el.statWarsTied) el.statWarsTied.querySelector('span').textContent = String(Math.abs(ties));
+  if (el.statGained) el.statGained.querySelector('span').textContent = String(Math.abs(gained));
+  if (el.statLost) el.statLost.querySelector('span').textContent = String(Math.abs(lost));
+  if (el.statBonus) el.statBonus.querySelector('span').textContent = String(Math.abs(bonus));
 }
 
 export function updateFavoriteButton(tag) {
@@ -759,11 +852,24 @@ export function hideWarEventsViewAndReturnToRounds() {
   $('main').scrollTop = 0;
 }
 
+export function toggleFavoritesAccordion(forceOpen = null) {
+  const btn = el.favAccordionBtn || $('favAccordionBtn');
+  const list = el.menuFavoritesList || $('menuFavoritesList');
+  if (!btn || !list) return;
+  const isCurrentlyOpen = !list.hidden;
+  const nextOpen = forceOpen !== null ? Boolean(forceOpen) : !isCurrentlyOpen;
+  list.hidden = !nextOpen;
+  btn.classList.toggle('expanded', nextOpen);
+  btn.setAttribute('aria-expanded', String(nextOpen));
+}
+
 export function setMobileMenu(open, onSelectClan) {
   el.menu.classList.toggle('open', open);
   el.menu.setAttribute('aria-hidden', !open);
   if (open) {
     renderMenuFavorites(onSelectClan);
+  } else {
+    toggleFavoritesAccordion(false);
   }
 }
 
@@ -834,7 +940,10 @@ export function renderSearchResults(clans, onSelectClan) {
       const lImg = mk('img', 'search-result-league-icon');
       lImg.src = iconPath;
       lImg.alt = '';
-      lImg.onerror = () => lImg.remove();
+      lImg.onerror = () => {
+        lImg.onerror = () => lImg.remove();
+        lImg.src = DEFAULT_UNRANKED_LEAGUE_ICON;
+      };
       leagueWrap.append(lImg);
     }
     leagueWrap.append(document.createTextNode(clan.warLeague?.name || 'Sem liga'));
@@ -857,16 +966,22 @@ export function renderSearchResults(clans, onSelectClan) {
 }
 
 /**
- * Renderiza a Aba 1: Classificação usando estritamente as imagens locais para tendências:
- * - Top 2: <img src="assets/up.png" alt="Up">
- * - Últimos 2: <img src="assets/down.png" alt="Down">
- * - Meio de tabela: <img src="assets/stay.png" alt="Stay">
+ * Renderiza a Aba 1: Classificação usando imagens locais para tendências
+ * e tornando as linhas interativas (ao clicar, carrega o dashboard do clã correspondente).
  */
-export function renderLeaderboard(standings, currentTag) {
+export function renderLeaderboard(standings, currentTag, onSelectClan) {
   const box = $('leaderboard');
   box.replaceChildren();
+  const normalizedCurrentTag = cleanTag(currentTag);
+
   standings.forEach((s, i) => {
-    const row = mk('div', 'row' + (s.clan.tag === '#' + currentTag ? ' me' : ''));
+    const isMe = cleanTag(s.clan.tag) === normalizedCurrentTag;
+    const row = mk('div', 'row leaderboard-row' + (isMe ? ' me' : ''));
+    row.dataset.tag = s.clan.tag;
+    row.setAttribute('role', 'button');
+    row.setAttribute('tabindex', '0');
+    row.setAttribute('title', `Ver dados de ${s.clan.name}`);
+
     row.append(mk('span', 'pos', i + 1));
 
     const trendImg = mk('img', 'trend-icon');
@@ -892,6 +1007,25 @@ export function renderLeaderboard(standings, currentTag) {
     const st = mk('div', 'stars');
     st.append(mk('i', 'ph-fill ph-star'), document.createTextNode(s.stars));
     row.append(st);
+
+    const handleSelect = () => {
+      const selectedTag = row.dataset.tag || s.clan.tag;
+      if (typeof onSelectClan === 'function' && selectedTag) {
+        onSelectClan(selectedTag);
+        const mainEl = $('main');
+        if (mainEl) mainEl.scrollTop = 0;
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    };
+
+    row.addEventListener('click', handleSelect);
+    row.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        handleSelect();
+      }
+    });
+
     box.append(row);
   });
 }
